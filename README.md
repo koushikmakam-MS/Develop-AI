@@ -4,35 +4,69 @@ Multi-agent CLI assistant powered by Azure AI Foundry (GPT-4o) that connects to 
 
 ## Architecture
 
+```mermaid
+graph TB
+    subgraph Interface["🖥️ User Interface"]
+        CLI["CLI Chat<br/><i>Rich + prompt-toolkit</i>"]
+        Teams["Microsoft Teams Bot<br/><i>Bot Framework</i>"]
+    end
+
+    subgraph Orchestrator["🧠 Orchestration"]
+        Brain["Brain Agent<br/><i>Azure AI Foundry · GPT-4o</i>"]
+    end
+
+    subgraph Agents["🤖 Specialized Agents"]
+        Knowledge["📚 Knowledge Agent<br/><i>RAG over docs</i>"]
+        Debug["🔍 Debug Agent<br/><i>2-phase Kusto debugging</i>"]
+        Coder["💻 Coder Agent<br/><i>Code-path tracing</i>"]
+        Updater["✏️ Knowledge Updater<br/><i>Doc corrections → PRs</i>"]
+        Improver["📝 Doc Improver<br/><i>Background: code → docs</i>"]
+    end
+
+    subgraph Data["💾 Data Layer"]
+        ChromaDocs["ChromaDB<br/><i>Doc embeddings</i>"]
+        ChromaCode["ChromaDB<br/><i>Code index (62K+ chunks)</i>"]
+        KustoMCP["Kusto MCP Server<br/><i>FastAPI · port 8701</i>"]
+        DevOps["Azure DevOps<br/><i>REST API · PRs</i>"]
+    end
+
+    subgraph External["☁️ External Services"]
+        Kusto["Kusto Cluster<br/><i>Live telemetry</i>"]
+        Repo["BMS Repo<br/><i>Azure DevOps Git</i>"]
+        Codex["gpt-5.1-codex-mini<br/><i>Code Reader LLM</i>"]
+    end
+
+    CLI --> Brain
+    Teams --> Brain
+    Brain --> Knowledge
+    Brain --> Debug
+    Brain --> Coder
+    Brain --> Updater
+    Brain --> Improver
+
+    Knowledge --> ChromaDocs
+    Debug --> KustoMCP
+    Debug --> ChromaDocs
+    Coder --> ChromaCode
+    Updater --> DevOps
+    Improver --> ChromaCode
+    Improver --> Codex
+    Improver --> DevOps
+
+    KustoMCP --> Kusto
+    Repo -- "Daily sync" --> ChromaDocs
+    Repo -- "Daily sync" --> ChromaCode
+
+    style Interface fill:#e1f5fe,stroke:#0288d1,color:#000
+    style Orchestrator fill:#fff3e0,stroke:#f57c00,color:#000
+    style Agents fill:#e8f5e9,stroke:#388e3c,color:#000
+    style Data fill:#f3e5f5,stroke:#7b1fa2,color:#000
+    style External fill:#fce4ec,stroke:#c62828,color:#000
 ```
-???????????????????????????????????????????????
-?           CLI Chat  /  Microsoft Teams Bot    ?
-???????????????????????????????????????????????
-                   ?
-         ??????????????????????
-         ?    Brain Agent      ?  Routes to sub-agents
-         ? (Azure AI Foundry)  ?
-         ??????????????????????
-        ?       ?        ?         ?
- ???????????? ??????????? ??????????? ???????????????????
- ? Knowledge ? ?  Debug   ? ?  Coder   ? ? Knowledge Updater ?
- ?   Agent   ? ?  Agent   ? ?  Agent   ? ?      Agent        ?
- ? (RAG/docs)? ?(Kusto+  )? ?(RAG/code)? ? (corrections->PR) ?
- ???????????? ? docs    )? ??????????? ???????????????????
-      ?        ??????????? ?                   ?
- ????????????? ???????????? ?????????????  ??????????????????
- ? ChromaDB   ? ? Kusto MCP? ? ChromaDB  ?  ? Azure DevOps    ?
- ?(doc embeds)? ?  Server  ? ?(code index)?  ? REST API (PRs)  ?
- ????????????? ???????????? ?????????????  ??????????????????
-                     ?           ?
-      ?          ???????????? ??????????????????
- ??????????????????  ?  Kusto   ? ? BMS Repo (src) ?
- ? docs/agentKT/ ?  ?  Cluster ? ??????????????????
- ??????????????????  ????????????       ?
-      ?                        Daily-synced from
- Daily-synced from               Azure DevOps
- Azure DevOps
-```
+
+> **How it works:** The **Brain Agent** routes every user message to the best sub-agent based on intent.
+> Agents query ChromaDB (docs & code), Kusto (live telemetry), or Azure DevOps (PRs) as needed.
+> The **Doc Improver** runs in the background, reading source code with `gpt-5.1-codex-mini` and creating PRs for documentation gaps.
 
 ## Quick Start
 
@@ -213,58 +247,58 @@ Safety nets:
 
 ```
 BCRD-DeveloperAI/
-??? brain_ai/                    # Python package
-?   ??? config.py                # Configuration loader
-?   ??? llm_client.py            # Azure AI Foundry LLM client
-?   ??? code_reader_llm.py       # Code-optimized LLM (gpt-5.1-codex-mini)
-?   ??? startup.py               # Pre-flight checks & dependency launcher
-?   ??? sync/
-?   ?   ??? repo_sync.py         # Azure DevOps repo sync
-?   ?   ??? devops_pr.py         # Azure DevOps PR helper (REST API)
-?   ??? vectorstore/
-?   ?   ??? indexer.py           # ChromaDB document indexer
-?   ?   ??? code_indexer.py      # ChromaDB source code indexer
-?   ??? agents/
-?   ?   ??? brain_agent.py       # Router/orchestrator
-?   ?   ??? knowledge_agent.py   # RAG-based Q&A over docs
-?   ?   ??? debug_agent.py       # Kusto debug agent
-?   ?   ??? coder_agent.py       # Code path tracing agent
-?   ?   ??? knowledge_updater_agent.py  # Doc correction & PR agent
-?   ?   ??? doc_improver_agent.py       # Background doc improvement agent
-?   ??? kusto/
-?   ?   ??? client.py            # Kusto MCP client
-?   ?   ??? server.py            # Kusto MCP server (FastAPI)
-?   ??? bot/
-?   ?   ??? teams_bot.py         # Teams bot (ActivityHandler)
-?   ?   ??? adapter.py           # Bot Framework adapter
-?   ?   ??? app.py               # aiohttp web app + background services
-?   ?   ??? teams_manifest/      # Teams app manifest template
-?   ??? cli/
-?       ??? chat.py              # CLI chat interface
-??? deploy/
-?   ??? main.bicep               # Azure Bicep IaC template
-?   ??? parameters.json          # Deployment parameters template
-?   ??? deploy.ps1               # One-command deployment script
-??? Dockerfile                   # Multi-stage Docker build
-??? docker-compose.yml           # Docker Compose for all services
-??? .env.template                # Environment variables template
-??? config.yaml                  # Generic settings (committed)
-??? config.local.yaml             # Secrets & overrides (gitignored)
-??? config.yaml.template         # Template for config.yaml
-??? config.local.yaml.template   # Template for secrets
-??? pyproject.toml               # Package config & dependencies
-??? requirements.txt             # Pip requirements
-??? run_bot.py                   # Teams Bot entry point
-??? run_sync.py                  # Sync docs entry point
-??? run_index.py                 # Index docs entry point
-??? run_code_index.py            # Index source code entry point
-??? run_chat.py                  # CLI chat entry point
-??? run_daily.py                 # Daily sync+index automation
-??? run_kusto_server.py          # Kusto MCP server entry point
-??? run_doc_improver.py          # Doc Improver entry point
-??? setup.ps1                    # One-command setup (PowerShell)
-??? setup.sh                     # One-command setup (Bash)
-??? tests/                       # Unit tests
+├── brain_ai/                    # Python package
+│   ├── config.py                # Configuration loader
+│   ├── llm_client.py            # Azure AI Foundry LLM client
+│   ├── code_reader_llm.py       # Code-optimized LLM (gpt-5.1-codex-mini)
+│   ├── startup.py               # Pre-flight checks & dependency launcher
+│   ├── sync/
+│   │   ├── repo_sync.py         # Azure DevOps repo sync
+│   │   └── devops_pr.py         # Azure DevOps PR helper (REST API)
+│   ├── vectorstore/
+│   │   ├── indexer.py           # ChromaDB document indexer
+│   │   └── code_indexer.py      # ChromaDB source code indexer
+│   ├── agents/
+│   │   ├── brain_agent.py       # Router/orchestrator
+│   │   ├── knowledge_agent.py   # RAG-based Q&A over docs
+│   │   ├── debug_agent.py       # Kusto debug agent
+│   │   ├── coder_agent.py       # Code path tracing agent
+│   │   ├── knowledge_updater_agent.py  # Doc correction & PR agent
+│   │   └── doc_improver_agent.py       # Background doc improvement agent
+│   ├── kusto/
+│   │   ├── client.py            # Kusto MCP client
+│   │   └── server.py            # Kusto MCP server (FastAPI)
+│   ├── bot/
+│   │   ├── teams_bot.py         # Teams bot (ActivityHandler)
+│   │   ├── adapter.py           # Bot Framework adapter
+│   │   ├── app.py               # aiohttp web app + background services
+│   │   └── teams_manifest/      # Teams app manifest template
+│   └── cli/
+│       └── chat.py              # CLI chat interface
+├── deploy/
+│   ├── main.bicep               # Azure Bicep IaC template
+│   ├── parameters.json          # Deployment parameters template
+│   └── deploy.ps1               # One-command deployment script
+├── tests/                       # Unit tests
+├── Dockerfile                   # Multi-stage Docker build
+├── docker-compose.yml           # Docker Compose for all services
+├── .env.template                # Environment variables template
+├── config.yaml                  # Generic settings (committed)
+├── config.local.yaml            # Secrets & overrides (gitignored)
+├── config.yaml.template         # Template for config.yaml
+├── config.local.yaml.template   # Template for secrets
+├── pyproject.toml               # Package config & dependencies
+├── requirements.txt             # Pip requirements
+├── run_chat.py                  # CLI chat entry point
+├── run_bot.py                   # Teams Bot entry point
+├── run_sync.py                  # Sync docs entry point
+├── run_index.py                 # Index docs entry point
+├── run_code_index.py            # Index source code entry point
+├── run_daily.py                 # Daily sync+index automation
+├── run_kusto_server.py          # Kusto MCP server entry point
+├── run_doc_improver.py          # Doc Improver entry point
+├── setup.ps1                    # One-command setup (PowerShell)
+└── setup.sh                     # One-command setup (Bash)
 ```
 
 ## Doc Improver Agent (Background Workflow)
