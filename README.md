@@ -68,6 +68,183 @@ graph TB
 > Agents query ChromaDB (docs & code), Kusto (live telemetry), or Azure DevOps (PRs) as needed.
 > The **Doc Improver** runs in the background, reading source code with `gpt-5.1-codex-mini` and creating PRs for documentation gaps.
 
+## Design
+
+### Request Lifecycle
+
+Every user message flows through this pipeline — from input to routed agent to final response:
+
+```mermaid
+sequenceDiagram
+    actor User
+    participant CLI as CLI / Teams
+    participant Brain as Brain Agent
+    participant LLM as Azure OpenAI<br/>GPT-4o
+    participant Agent as Sub-Agent
+    participant Data as Data Layer
+
+    User->>CLI: Sends message
+    CLI->>Brain: handle(message, history)
+    Brain->>LLM: Route: "Which agent?"<br/>(ROUTER_SYSTEM_PROMPT)
+    LLM-->>Brain: → "debug" | "knowledge" | "coder" | ...
+    Brain->>Agent: delegate(message, history)
+    Agent->>Data: Query (ChromaDB / Kusto / DevOps)
+    Data-->>Agent: Results
+    Agent->>LLM: Generate response with context
+    LLM-->>Agent: Answer
+    Agent-->>Brain: Response + metadata
+    Brain-->>CLI: Formatted answer
+    CLI-->>User: Display with Markdown
+```
+
+### Debug Agent — 2-Phase Flow
+
+The Debug Agent runs a structured investigation: first a broad standard flow, then a targeted deep dive using feature documentation:
+
+```mermaid
+flowchart TD
+    Start([User: "Debug TaskId X"]) --> Classify["🔍 Classify GUIDs<br/><i>TaskId vs SubscriptionId vs RequestId</i>"]
+    Classify -->|Unknown GUID| Ask["❓ Ask user:<br/>'Is this a TaskId, RequestId,<br/>or SubscriptionId?'"]
+    Classify -->|Classified| TimeRange["⏱️ Extract / prompt<br/>for time range"]
+    Ask --> TimeRange
+
+    TimeRange --> Phase1["<b>Phase 1: Standard Flow</b>"]
+
+    subgraph P1["Phase 1 — Standard Debugging"]
+        Phase1 --> Q1["Query OperationStatsLocalAll<br/><i>Find operations by TaskId</i>"]
+        Q1 --> Q2["Query TraceLogMessageAllClusters<br/><i>Get error traces</i>"]
+        Q2 --> Analyze1["Analyze: error codes,<br/>roles, messages"]
+    end
+
+    Analyze1 -->|All succeeded| Done1([✅ Return results])
+    Analyze1 -->|Failures found| Phase2["<b>Phase 2: Feature Deep Dive</b>"]
+
+    subgraph P2["Phase 2 — Feature-Specific"]
+        Phase2 --> Search["Search ChromaDB<br/><i>Feature docs for this error</i>"]
+        Search --> Q3["Run feature-specific<br/>KQL queries from docs"]
+        Q3 --> Analyze2["Final root-cause<br/>analysis"]
+    end
+
+    Analyze2 --> Done2([📋 Combined report:<br/>Root cause + Next steps])
+
+    subgraph Enforce["Applied to ALL Queries"]
+        direction LR
+        E1["Replace &lt;placeholders&gt;<br/>with real GUIDs"]
+        E2["Enforce time range<br/>ago(Xd)"]
+        E3["Inject TaskId scope<br/>on known tables"]
+    end
+
+    style P1 fill:#e3f2fd,stroke:#1565c0,color:#000
+    style P2 fill:#fff3e0,stroke:#ef6c00,color:#000
+    style Enforce fill:#f1f8e9,stroke:#558b2f,color:#000
+```
+
+### Doc Improver Agent — Background Workflow
+
+The Doc Improver runs on a schedule, reading source code and comparing it against existing documentation to find and fix gaps:
+
+```mermaid
+flowchart LR
+    subgraph Trigger["⏰ Trigger"]
+        Sched["Schedule<br/><i>every 72h</i>"]
+        Manual["Manual<br/><i>run_doc_improver.py</i>"]
+    end
+
+    subgraph Analyze["🔬 Analysis Loop"]
+        direction TB
+        ReadCode["Read source code<br/><i>gpt-5.1-codex-mini</i><br/>(Responses API)"]
+        ReadDocs["Load existing docs<br/><i>from docs/agentKT/</i>"]
+        Compare["Compare code vs docs<br/><i>Find gaps & errors</i>"]
+        ReadCode --> Compare
+        ReadDocs --> Compare
+    end
+
+    subgraph Improve["✏️ Improvement"]
+        direction TB
+        Update["Update existing docs<br/><i>GPT-4o rewrites</i>"]
+        Create["Create new docs<br/><i>for undocumented features</i>"]
+        Validate["Validate against<br/><i>standard template</i>"]
+        Update --> Validate
+        Create --> Validate
+    end
+
+    subgraph Output["📤 Output"]
+        direction TB
+        PR["Create Azure DevOps PR<br/><i>One branch, batch commit</i>"]
+        Index["Re-index updated docs<br/><i>into ChromaDB</i>"]
+    end
+
+    Trigger --> Analyze
+    Analyze -->|"Iterate<br/>(up to 3x)"| Improve
+    Improve --> Output
+
+    style Trigger fill:#f3e5f5,stroke:#7b1fa2,color:#000
+    style Analyze fill:#e3f2fd,stroke:#1565c0,color:#000
+    style Improve fill:#fff3e0,stroke:#ef6c00,color:#000
+    style Output fill:#e8f5e9,stroke:#2e7d32,color:#000
+```
+
+### Knowledge Updater — Correction Flow
+
+```mermaid
+sequenceDiagram
+    actor User
+    participant Brain as Brain Agent
+    participant KU as Knowledge Updater
+    participant Chroma as ChromaDB
+    participant DevOps as Azure DevOps
+
+    User->>Brain: "That's wrong — retries are 3, not 5"
+    Brain->>KU: Route to Knowledge Updater
+    KU->>Chroma: Search for relevant doc
+    Chroma-->>KU: Best matching doc + chunk
+    KU->>KU: Apply correction to doc text
+    KU->>Chroma: Update local embeddings
+    KU-->>User: "✅ Staged correction to Feature_Jobs.md"
+
+    Note over User,KU: User can add more corrections...
+
+    User->>KU: "submit"
+    KU->>DevOps: Create branch
+    KU->>DevOps: Commit all corrections
+    KU->>DevOps: Create Pull Request
+    DevOps-->>KU: PR #1234
+    KU-->>User: "📋 PR created: PR #1234 with 3 corrections"
+```
+
+### Data Sync Pipeline
+
+```mermaid
+flowchart LR
+    subgraph Source["☁️ Azure DevOps"]
+        Repo["BMS Git Repo"]
+    end
+
+    subgraph Sync["🔄 Daily Sync"]
+        Pull["git pull<br/><i>incremental</i>"]
+        Copy["Copy changed files<br/><i>.md → docs/agentKT/</i><br/><i>.cs/.py → code cache</i>"]
+    end
+
+    subgraph Index["📊 Indexing"]
+        DocIdx["Doc Indexer<br/><i>Chunk → embed → ChromaDB</i>"]
+        CodeIdx["Code Indexer<br/><i>Chunk → embed → ChromaDB</i>"]
+    end
+
+    subgraph Store["💾 ChromaDB"]
+        DocCol["agent_kt_docs<br/><i>doc embeddings</i>"]
+        CodeCol["bms_code<br/><i>62K+ code chunks</i>"]
+    end
+
+    Repo --> Pull --> Copy
+    Copy --> DocIdx --> DocCol
+    Copy --> CodeIdx --> CodeCol
+
+    style Source fill:#fce4ec,stroke:#c62828,color:#000
+    style Sync fill:#fff3e0,stroke:#ef6c00,color:#000
+    style Index fill:#e3f2fd,stroke:#1565c0,color:#000
+    style Store fill:#e8f5e9,stroke:#2e7d32,color:#000
+```
+
 ## Quick Start
 
 ### Option A: One-Command Setup (Recommended)
