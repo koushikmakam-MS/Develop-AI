@@ -519,4 +519,114 @@ az containerapp update --name bcrd-devai-bot \
 - [x] Azure Container Apps deployment (Bicep IaC)
 - [x] Doc Improver Agent — background auto-improvement of docs from code analysis
 - [ ] Azure Key Vault for secrets management
+- [ ] **Agent Hive Architecture** — domain-specialized agent swarms with cross-hive collaboration _(see below)_
 - [ ] **More agents planned** — CI/CD pipeline agent, PR review agent, incident triage agent, and others will be added as the platform matures. The plug-in architecture makes it easy to extend (see [Adding New Agents](#adding-new-agents)).
+
+---
+
+## 🐝 Future Vision: Agent Hive Architecture
+
+The current system has a single Brain Agent routing to a flat set of sub-agents. The next evolution is a **Hive Architecture** — a network of domain-specialized agent clusters ("hives") that collaborate across team boundaries to solve complex, cross-cutting issues.
+
+### Concept
+
+```mermaid
+graph TB
+    subgraph Gateway["🌐 Gateway Layer"]
+        Router["🧭 Top-Level Router Agent<br/><i>Intent classification · Hive selection<br/>Cross-hive orchestration</i>"]
+    end
+
+    subgraph BMS_Hive["🐝 BMS Hive<br/><i>Backup Management Service</i>"]
+        BMS_Brain["🧠 BMS Brain"]
+        BMS_Know["📚 Knowledge"]
+        BMS_Debug["🔍 Debug"]
+        BMS_Code["💻 Coder"]
+        BMS_Doc["📝 Doc Improver"]
+        BMS_Brain --> BMS_Know
+        BMS_Brain --> BMS_Debug
+        BMS_Brain --> BMS_Code
+        BMS_Brain --> BMS_Doc
+    end
+
+    subgraph Common_Hive["🐝 Common Hive<br/><i>Shared Libraries & Infra</i>"]
+        COM_Brain["🧠 Common Brain"]
+        COM_Know["📚 Knowledge"]
+        COM_Debug["🔍 Debug"]
+        COM_Code["💻 Coder"]
+        COM_Brain --> COM_Know
+        COM_Brain --> COM_Debug
+        COM_Brain --> COM_Code
+    end
+
+    subgraph Core_Hive["🐝 Core Hive<br/><i>Core Platform Services</i>"]
+        CORE_Brain["🧠 Core Brain"]
+        CORE_Know["📚 Knowledge"]
+        CORE_Debug["🔍 Debug"]
+        CORE_Code["💻 Coder"]
+        CORE_Brain --> CORE_Know
+        CORE_Brain --> CORE_Debug
+        CORE_Brain --> CORE_Code
+    end
+
+    subgraph Prot_Hive["🐝 Protection Hive<br/><i>Protection & Workload Agents</i>"]
+        PROT_Brain["🧠 Protection Brain"]
+        PROT_Know["📚 Knowledge"]
+        PROT_Debug["🔍 Debug"]
+        PROT_Code["💻 Coder"]
+        PROT_Brain --> PROT_Know
+        PROT_Brain --> PROT_Debug
+        PROT_Brain --> PROT_Code
+    end
+
+    Router --> BMS_Brain
+    Router --> COM_Brain
+    Router --> CORE_Brain
+    Router --> PROT_Brain
+
+    BMS_Brain <-. "cross-hive<br/>collaboration" .-> COM_Brain
+    BMS_Brain <-. "cross-hive<br/>collaboration" .-> CORE_Brain
+    COM_Brain <-. "cross-hive<br/>collaboration" .-> CORE_Brain
+    CORE_Brain <-. "cross-hive<br/>collaboration" .-> PROT_Brain
+
+    style Gateway fill:#fff3e0,stroke:#e65100,color:#000
+    style BMS_Hive fill:#e3f2fd,stroke:#1565c0,color:#000
+    style Common_Hive fill:#e8f5e9,stroke:#2e7d32,color:#000
+    style Core_Hive fill:#f3e5f5,stroke:#6a1b9a,color:#000
+    style Prot_Hive fill:#fce4ec,stroke:#b71c1c,color:#000
+```
+
+### How It Works
+
+| Layer | Role | Details |
+|-------|------|---------|
+| **Top-Level Router** | Intent classification & hive selection | Analyzes the user's question, determines which domain(s) are involved, and dispatches to one or more hives. Orchestrates multi-hive conversations for cross-cutting issues. |
+| **Hive Brain** | Domain-local orchestrator | Each hive has its own Brain Agent that routes internally to its Knowledge, Debug, Coder, and Doc Improver agents — scoped to that domain's docs, code, and Kusto tables. |
+| **Cross-Hive Collaboration** | Agent-to-agent communication | When a BMS debug investigation discovers the root cause is in Common or Core, the BMS hive delegates to the relevant hive. Results flow back and are synthesized into a unified answer. |
+
+### Example Hives
+
+| Hive | Domain | Docs & Code Scope |
+|------|--------|--------------------|
+| **BMS** | Backup Management Service | `src/BMS/`, DPP + RSV feature docs, BMS Kusto tables |
+| **Common** | Shared libraries, utilities, SDK | `src/Common/`, shared infra docs, common telemetry |
+| **Core** | Core platform (ARM, resource providers) | `src/Core/`, platform docs, RP registration |
+| **Protection** | Workload protection agents (VM, SQL, SAP) | `src/Protection/`, workload-specific docs & KQL |
+
+### Cross-Hive Scenario
+
+> **User:** _"A backup job for SQL on Azure VM failed with error code `UserErrorVmNotFound`. The job ID is `abc-123`. What went wrong?"_
+>
+> 1. **Router** → classifies as BMS + Protection concern → dispatches to **BMS Hive**
+> 2. **BMS Debug Agent** → queries Kusto, finds the job failed during VM snapshot phase, error originates from Protection layer
+> 3. **BMS Brain** → recognizes cross-hive dependency → delegates to **Protection Hive**
+> 4. **Protection Debug Agent** → queries workload-specific Kusto tables, finds the VM was deallocated at snapshot time
+> 5. **Protection Brain** → also checks **Common Hive** for SDK retry behavior
+> 6. **Router** → synthesizes all findings: _"The backup failed because the VM was deallocated. The Protection agent attempted 3 retries (Common SDK retry policy) but the VM never came back online. Actionable fix: ensure VM is running or configure pre-backup scripts."_
+
+### Design Principles
+
+- **Each hive is self-contained** — own ChromaDB collections, own Kusto table scope, own doc set
+- **Hives are independently deployable** — a team can spin up their own hive and register it with the router
+- **Cross-hive protocol is message-based** — hives communicate via structured requests/responses, not shared memory
+- **The router never does domain work** — it only classifies, dispatches, and synthesizes
+- **Backward compatible** — today's single-hive BMS setup becomes one node in the larger network
