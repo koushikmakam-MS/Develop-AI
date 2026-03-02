@@ -1,0 +1,63 @@
+{
+  "$schema": "https://developer.microsoft.com/en-us/json-schemas/teams/v1.16/MicrosoftTeams.schema.json",
+  "manifestVersion": "1.16",
+  "version": "1.0.0",
+  "id": "{{BOT_APP_ID}}",
+  "developer": {
+    "name": "BCRD DeveloperAI Team",
+    "websiteUrl": "https://github.com/your-org/bcrd-developerai",
+    "privacyUrl": "https://github.com/your-org/bcrd-developerai/blob/main/PRIVACY.md",
+    "termsOfUseUrl": "https://github.com/your-org/bcrd-developerai/blob/main/TERMS.md"
+  },
+  "name": {
+    "short": "BCRD DeveloperAI",
+    "full": "BCRD DeveloperAI - Azure Backup Management Assistant"
+  },
+  "description": {
+    "short": "AI assistant for Azure Backup Management",
+    "full": "BCRD DeveloperAI is an AI-powered assistant that helps with Azure Backup Management questions, debugging Kusto/KQL queries, code tracing, and documentation updates. @mention it in a channel or chat directly."
+  },
+  "icons": {
+    "outline": "outline.png",
+    "color": "color.png"
+  },
+  "accentColor": "#4B56D2",
+  "bots": [
+    {
+      "botId": "{{BOT_APP_ID}}",
+      "scopes": [
+        "personal",
+        "team",
+        "groupChat"
+      ],
+      "supportsFiles": false,
+      "isNotificationOnly": false,
+      "commandLists": [
+        {
+          "scopes": ["personal", "team", "groupChat"],
+          "commands": [
+            {
+              "title": "help",
+              "description": "Show available capabilities"
+            },
+            {
+              "title": "clear",
+              "description": "Clear conversation history"
+            },
+            {
+              "title": "agents",
+              "description": "List available AI agents"
+            }
+          ]
+        }
+      ]
+    }
+  ],
+  "permissions": [
+    "identity",
+    "messageTeamMembers"
+  ],
+  "validDomains": [
+    "{{BOT_DOMAIN}}"
+  ]
+}

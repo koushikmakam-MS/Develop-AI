@@ -1,0 +1,54 @@
+# ============================================================
+# BCRD DeveloperAI — Docker Compose
+# ============================================================
+# All-in-one deployment: Teams Bot + Kusto MCP + Background jobs
+#
+# Usage:
+#   docker compose up -d                  # Start all services
+#   docker compose logs -f bcrd-devai-bot    # Follow bot logs
+#   docker compose exec bcrd-devai-bot python run_daily.py  # Manual sync
+# ============================================================
+
+services:
+  bcrd-devai-bot:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: bcrd-devai-bot
+    restart: unless-stopped
+    ports:
+      - "${BOT_PORT:-3978}:3978"
+      - "${KUSTO_PORT:-8701}:8701"
+    volumes:
+      # Persist ChromaDB index and repo cache across restarts
+      - chromadb_data:/app/.chromadb
+      - repo_cache:/app/.repo_cache
+      - ./config.yaml:/app/config.yaml:ro
+      - ./config.local.yaml:/app/config.local.yaml:ro
+      - ./docs:/app/docs
+    environment:
+      # Override config.yaml values with env vars
+      - BCRD_DEVAI_LLM_API_KEY=${BCRD_DEVAI_LLM_API_KEY:-}
+      - BCRD_DEVAI_AZURE_DEVOPS_PAT=${BCRD_DEVAI_AZURE_DEVOPS_PAT:-}
+      - BCRD_DEVAI_KUSTO_CLUSTER_URL=${BCRD_DEVAI_KUSTO_CLUSTER_URL:-}
+      - BCRD_DEVAI_KUSTO_DATABASE=${BCRD_DEVAI_KUSTO_DATABASE:-}
+      # Bot Framework credentials
+      - BCRD_DEVAI_TEAMS_BOT_APP_ID=${BCRD_DEVAI_TEAMS_BOT_APP_ID:-}
+      - BCRD_DEVAI_TEAMS_BOT_APP_PASSWORD=${BCRD_DEVAI_TEAMS_BOT_APP_PASSWORD:-}
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:3978/api/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 30s
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "50m"
+        max-file: "5"
+
+volumes:
+  chromadb_data:
+    driver: local
+  repo_cache:
+    driver: local

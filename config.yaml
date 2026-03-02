@@ -1,0 +1,137 @@
+# ============================================================
+# BCRD DeveloperAI Configuration (safe to commit)
+# ============================================================
+# Generic / structural settings live here.
+# Secrets (PAT, API keys, endpoints) go in config.local.yaml
+# which is gitignored and never committed.
+#
+# Load order (last wins):
+#   1. config.yaml           ← this file (committed)
+#   2. config.local.yaml     ← secrets & overrides (gitignored)
+#   3. Environment variables ← highest priority
+#
+# Environment variable overrides:
+#   BCRD_DEVAI_AZURE_DEVOPS_PAT
+#   BCRD_DEVAI_LLM_API_KEY
+#   BCRD_DEVAI_KUSTO_CLUSTER_URL
+#   BCRD_DEVAI_KUSTO_DATABASE
+# ============================================================
+
+# --- Azure DevOps Repo Sync ---
+azure_devops:
+  # pat: set in config.local.yaml or BCRD_DEVAI_AZURE_DEVOPS_PAT
+  repo_url: "https://msazure.visualstudio.com/One/_git/Mgmt-RecoverySvcs-BackupMgmt"
+  branch: "feature/add-agent-kt-memory-doc"
+  sync_paths:
+    - "docs/agentKT"
+  file_extensions:
+    - ".md"
+
+# --- LLM (Azure AI Foundry) ---
+# endpoint & api_key: set in config.local.yaml or BCRD_DEVAI_LLM_API_KEY
+llm:
+  provider: "azure_openai"
+  # endpoint: set in config.local.yaml
+  # api_key: set in config.local.yaml
+  api_version: "2025-01-01-preview"
+  model: "gpt-4o-mini"
+  max_tokens: 4096
+
+# --- Kusto / Azure Data Explorer ---
+# cluster_url & database: set in config.local.yaml or env vars
+kusto:
+  # cluster_url: set in config.local.yaml
+  # database: set in config.local.yaml
+  auth_method: "az_cli"
+
+# --- Vector Store (ChromaDB) ---
+vectorstore:
+  persist_directory: ".chromadb"
+  collection_name: "agent_kt_docs"
+  embedding_model: "all-MiniLM-L6-v2"
+  chunk_size: 1000
+  chunk_overlap: 200
+
+# --- Paths ---
+paths:
+  docs_dir: "docs/agentKT"
+  repo_clone_dir: ".repo_cache"
+
+# --- Code Index (for Coder Agent) ---
+# Indexes source code from the BMS repo for code-path tracing
+code_index:
+  collection_name: "bms_code"
+  chunk_size: 1500
+  chunk_overlap: 300
+  # Paths within the repo to index (relative to repo root)
+  # Leave empty to index the entire repo
+  sync_paths:
+    - "src"
+  # File extensions to index
+  file_extensions:
+    - ".cs"
+    - ".py"
+    - ".json"
+    - ".config"
+
+# --- Agent Routing ---
+agents:
+  # Add new agents here in future
+  enabled:
+    - "knowledge"
+    - "debug"
+    - "coder"
+    - "knowledge_updater"
+  # Minimum similarity score (0.0–1.0) for the knowledge agent to be
+  # considered a confident match. Below this the coder agent is tried.
+  knowledge_confidence_threshold: 0.35
+  # If knowledge confidence is below this, flag the topic as a documentation
+  # gap and offer to create a new doc via the knowledge_updater agent.
+  # Note: with all-MiniLM-L6-v2 embeddings, good matches score ~0.50-0.60,
+  # mediocre matches ~0.35-0.50, and poor matches <0.35.
+  doc_gap_threshold: 0.45
+
+# --- Microsoft Teams Bot ---
+# Register your bot at https://dev.botframework.com or via Azure Bot Service.
+# Set app_id and app_password in config.local.yaml for production.
+# Leave blank for local development with Bot Framework Emulator.
+teams_bot:
+  # app_id: set in config.local.yaml
+  # app_password: set in config.local.yaml
+  port: 3978
+  start_kusto_server: true      # Start Kusto MCP server as a background service
+  sync_interval_hours: 24       # How often to run doc/code sync (0 = disabled)
+  auto_reply_delay_minutes: 10  # Auto-reply to unanswered channel messages after N minutes
+
+# --- Code Reader LLM (for Doc Improver Agent) ---
+# Uses gpt-5.1-codex-mini deployed on Azure AI Foundry for reading code.
+# Separate from the main LLM to allow specialized code-reading model.
+# endpoint & api_key: set in config.local.yaml
+code_reader_llm:
+  provider: "azure_openai"
+  # endpoint: set in config.local.yaml
+  # api_key: set in config.local.yaml
+  model: "gpt-5.1-codex-mini"
+  max_tokens: 16384
+
+# --- Doc Improver Agent (background job) ---
+# Reads code from the repo, compares against existing docs, and creates
+# PRs for improvements. Runs as a scheduled background job.
+doc_improver:
+  enabled: true
+  # How often to run the improvement cycle (hours). 0 = manual only.
+  run_interval_hours: 72
+  # Max improvement iterations per cycle (converges when no new changes)
+  max_iterations: 3
+  # Max new docs to create per cycle (higher = more during bootstrap)
+  max_new_docs_per_cycle: 15
+  # Folders within the repo that contain the source code to analyze
+  code_folders:
+    - "src/Microsoft.Azure.Management.BackupManagement"
+  # Docs that must NOT be modified by the agent
+  protected_docs:
+    - "BackupMgmt_Architecture_Memory.md"
+  # Branch prefix for doc improvement PRs
+  branch_prefix: "bcrd-devai/doc-improvement"
+  # Minimum diff threshold — skip PR if fewer than this many lines changed
+  min_diff_lines: 10

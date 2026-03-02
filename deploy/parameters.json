@@ -1,0 +1,28 @@
+# deploy/parameters.json — fill in your values before deploying
+{
+  "$schema": "https://schema.management.azure.com/schemas/2019-04-01/deploymentParameters.json#",
+  "contentVersion": "1.0.0.0",
+  "parameters": {
+    "baseName": {
+      "value": "bcrd-devai"
+    },
+    "botAppId": {
+      "value": "<YOUR_BOT_APP_ID>"
+    },
+    "botAppPassword": {
+      "value": "<YOUR_BOT_APP_PASSWORD>"
+    },
+    "llmApiKey": {
+      "value": "<YOUR_LLM_API_KEY>"
+    },
+    "azureDevOpsPat": {
+      "value": "<YOUR_AZURE_DEVOPS_PAT>"
+    },
+    "kustoClusterUrl": {
+      "value": "https://mabprod1.kusto.windows.net"
+    },
+    "kustoDatabase": {
+      "value": "MABKustoProd1"
+    }
+  }
+}

@@ -1,0 +1,45 @@
+# Python
+__pycache__/
+*.pyc
+*.pyo
+*.egg-info/
+*.egg
+dist/
+build/
+.eggs/
+
+# Virtual environment
+.venv/
+venv/
+env/
+
+# BCRD DeveloperAI runtime data
+.chromadb/
+.repo_cache/
+docs/agentKT/
+bcrd_devai.log
+bcrd_devai_bot.log
+brainai.log
+brainai_bot.log
+daily_sync.log
+.doc_improver_last_run
+doc_gaps.json
+
+# Secrets - never commit
+config.local.yaml
+.env
+
+# IDE / Editors
+.vs/
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Test / Cache
+.pytest_cache/

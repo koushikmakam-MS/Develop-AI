@@ -1,0 +1,126 @@
+# ============================================================
+# BCRD DeveloperAI Configuration (safe to commit)
+# ============================================================
+# Generic / structural settings live here.
+# Secrets (PAT, API keys, endpoints) go in config.local.yaml
+# which is gitignored and never committed.
+#
+# Load order (last wins):
+#   1. config.yaml           ← this file (committed)
+#   2. config.local.yaml     ← secrets & overrides (gitignored)
+#   3. Environment variables ← highest priority
+#
+# To get started:
+#   1. Copy config.yaml.template → config.yaml
+#   2. Copy config.local.yaml.template → config.local.yaml
+#   3. Fill in your secrets in config.local.yaml
+# ============================================================
+
+# --- Azure DevOps Repo Sync ---
+azure_devops:
+  # pat: set in config.local.yaml or BCRD_DEVAI_AZURE_DEVOPS_PAT
+  # Full clone URL (HTTPS) of the repo
+  repo_url: "https://msazure.visualstudio.com/One/_git/Mgmt-RecoverySvcs-BackupMgmt"
+  # Branch to track
+  branch: "master"
+  # Paths inside the repo to sync (relative to repo root).
+  sync_paths:
+    - "docs"
+  # File extensions to include
+  file_extensions:
+    - ".md"
+
+# --- LLM (Azure AI Foundry) ---
+# endpoint & api_key: set in config.local.yaml or env vars
+llm:
+  provider: "azure_openai"
+  # endpoint: set in config.local.yaml
+  # api_key: set in config.local.yaml
+  # Deployment name (must match what you deployed in Azure AI Foundry)
+  model: "gpt-4o-mini"
+  max_tokens: 4096
+
+# --- Kusto / Azure Data Explorer ---
+# cluster_url & database: set in config.local.yaml or env vars
+kusto:
+  # cluster_url: set in config.local.yaml
+  # database: set in config.local.yaml
+  # Authentication: "az_cli" (uses az login), "managed_identity", or "device_code"
+  auth_method: "az_cli"
+
+# --- Vector Store (ChromaDB) ---
+vectorstore:
+  persist_directory: ".chromadb"
+  collection_name: "agent_kt_docs"
+  # Embedding model (runs locally via sentence-transformers)
+  embedding_model: "all-MiniLM-L6-v2"
+  chunk_size: 1000
+  chunk_overlap: 200
+
+# --- Paths ---
+paths:
+  docs_dir: "docs/agentKT"
+  repo_clone_dir: ".repo_cache"
+
+# --- Code Index (for Coder Agent) ---
+# Indexes source code from the BMS repo for code-path tracing
+code_index:
+  collection_name: "bms_code"
+  chunk_size: 1500
+  chunk_overlap: 300
+  # Paths within the repo to index (relative to repo root)
+  sync_paths:
+    - "src"
+  file_extensions:
+    - ".cs"
+    - ".py"
+    - ".json"
+    - ".config"
+
+# --- Agent Routing ---
+agents:
+  # Add new agents here in future
+  enabled:
+    - "knowledge"
+    - "debug"
+    - "coder"
+    - "knowledge_updater"
+  knowledge_confidence_threshold: 0.35
+  doc_gap_threshold: 0.45
+
+# --- Microsoft Teams Bot ---
+# Register your bot at https://dev.botframework.com or via Azure Bot Service.
+# Set app_id and app_password in config.local.yaml for production.
+teams_bot:
+  # app_id: set in config.local.yaml
+  # app_password: set in config.local.yaml
+  port: 3978
+  start_kusto_server: true        # Start Kusto MCP server as a background service
+  sync_interval_hours: 24         # How often to run doc/code sync (0 = disabled)
+  auto_reply_delay_minutes: 10    # Auto-reply to unanswered channel messages after N minutes
+
+# --- Code Reader LLM (for Doc Improver) ---
+# A separate LLM config for code analysis — uses a code-optimized model.
+# endpoint & api_key: set in config.local.yaml
+# Falls back to the main 'llm' section if not set.
+code_reader_llm:
+  provider: "azure_openai"
+  # endpoint: set in config.local.yaml
+  # api_key: set in config.local.yaml
+  model: "gpt-5.1-codex-mini"     # Code-optimized model for source analysis
+  max_tokens: 16384
+
+# --- Doc Improver Agent ---
+# Background agent that reads source code, compares against docs,
+# and creates PRs with documentation improvements.
+doc_improver:
+  enabled: false                   # Set to true to enable
+  run_interval_hours: 72           # How often to run (hours)
+  max_iterations: 3                # Max improvement passes per cycle
+  max_new_docs_per_cycle: 15       # Max new doc files per cycle (set high for bootstrap)
+  code_folders:                    # Repo folders to read directly for code analysis
+    - "src/Microsoft.Azure.Management.BackupManagement"
+  protected_docs:                  # Docs that are NEVER modified
+    - "BackupMgmt_Architecture_Memory.md"
+  branch_prefix: "bcrd-devai/doc-improvement"   # Git branch prefix for PRs
+  min_diff_lines: 10               # Minimum changed lines to warrant a PR

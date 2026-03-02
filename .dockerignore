@@ -1,0 +1,28 @@
+# Ignore Python caches
+__pycache__/
+*.pyc
+*.pyo
+*.egg-info/
+dist/
+build/
+
+# Ignore local env / IDE files
+.venv/
+.env
+.vscode/
+*.sln
+*.pyproj
+
+# Ignore local data (will be mounted as volumes)
+.chromadb/
+.repo_cache/
+doc_gaps.json
+bcrd_devai_bot.log
+brainai_bot.log
+
+# Ignore test files
+tests/
+test_*.py
+
+# Ignore docs that get synced at runtime
+# (keep the template, but sync fresh from DevOps)

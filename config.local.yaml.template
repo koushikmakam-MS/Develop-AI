@@ -1,0 +1,34 @@
+# ============================================================
+# BCRD DeveloperAI Local Configuration — SECRETS & OVERRIDES
+# ============================================================
+# Copy this file to config.local.yaml and fill in your values.
+# This file is gitignored — NEVER commit it.
+#
+# Values here override anything in config.yaml.
+# You only need to include the keys you want to set/override.
+# ============================================================
+
+# --- Azure DevOps ---
+azure_devops:
+  pat: "<YOUR_AZURE_DEVOPS_PAT>"
+
+# --- LLM (Azure AI Foundry) ---
+llm:
+  endpoint: "<YOUR_AZURE_AI_FOUNDRY_ENDPOINT>"
+  api_key: "<YOUR_AZURE_AI_FOUNDRY_API_KEY>"
+
+# --- Code Reader LLM (for Doc Improver) ---
+# Only needed if different from main LLM; falls back to llm section.
+code_reader_llm:
+  endpoint: "<YOUR_AZURE_AI_FOUNDRY_ENDPOINT>"
+  api_key: "<YOUR_AZURE_AI_FOUNDRY_API_KEY>"
+
+# --- Kusto / Azure Data Explorer ---
+kusto:
+  cluster_url: "<YOUR_KUSTO_CLUSTER_URL>"
+  database: "<YOUR_KUSTO_DATABASE>"
+
+# --- Microsoft Teams Bot (optional) ---
+# teams_bot:
+#   app_id: "<YOUR_BOT_APP_ID>"
+#   app_password: "<YOUR_BOT_APP_PASSWORD>"

@@ -1,0 +1,75 @@
+<Project DefaultTargets="Build" xmlns="http://schemas.microsoft.com/developer/msbuild/2003" ToolsVersion="4.0">
+  <PropertyGroup>
+    <Configuration Condition=" '$(Configuration)' == '' ">Debug</Configuration>
+    <SchemaVersion>2.0</SchemaVersion>
+    <ProjectGuid>088A338F-5E0D-40E5-9752-C6D63FEC8CCF</ProjectGuid>
+    <ProjectHome>.</ProjectHome>
+    <StartupFile>run_chat.py</StartupFile>
+    <SearchPath>.</SearchPath>
+    <WorkingDirectory>.</WorkingDirectory>
+    <OutputPath>.</OutputPath>
+    <Name>BCRD-DeveloperAI</Name>
+    <RootNamespace>brain_ai</RootNamespace>
+    <InterpreterId>MSBuild|env|$(MSBuildProjectFullPath)</InterpreterId>
+  </PropertyGroup>
+  <PropertyGroup Condition=" '$(Configuration)' == 'Debug' ">
+    <DebugSymbols>true</DebugSymbols>
+    <EnableUnmanagedDebugging>false</EnableUnmanagedDebugging>
+  </PropertyGroup>
+  <PropertyGroup Condition=" '$(Configuration)' == 'Release' ">
+    <DebugSymbols>true</DebugSymbols>
+    <EnableUnmanagedDebugging>false</EnableUnmanagedDebugging>
+  </PropertyGroup>
+  <ItemGroup>
+    <Compile Include="run_chat.py" />
+    <Compile Include="run_daily.py" />
+    <Compile Include="run_index.py" />
+    <Compile Include="run_sync.py" />
+    <Compile Include="brain_ai\__init__.py" />
+    <Compile Include="brain_ai\config.py" />
+    <Compile Include="brain_ai\llm_client.py" />
+    <Compile Include="brain_ai\agents\__init__.py" />
+    <Compile Include="brain_ai\agents\brain_agent.py" />
+    <Compile Include="brain_ai\agents\debug_agent.py" />
+    <Compile Include="brain_ai\agents\knowledge_agent.py" />
+    <Compile Include="brain_ai\cli\__init__.py" />
+    <Compile Include="brain_ai\cli\chat.py" />
+    <Compile Include="brain_ai\sync\__init__.py" />
+    <Compile Include="brain_ai\sync\repo_sync.py" />
+    <Compile Include="brain_ai\vectorstore\__init__.py" />
+    <Compile Include="brain_ai\vectorstore\indexer.py" />
+    <Compile Include="tests\__init__.py" />
+    <Compile Include="tests\test_basics.py" />
+  </ItemGroup>
+  <ItemGroup>
+    <Content Include="config.yaml" />
+    <Content Include="config.yaml.template" />
+    <Content Include="requirements.txt" />
+    <Content Include="pyproject.toml" />
+    <Content Include="README.md" />
+    <Content Include=".gitignore" />
+  </ItemGroup>
+  <ItemGroup>
+    <Folder Include="brain_ai\" />
+    <Folder Include="brain_ai\agents\" />
+    <Folder Include="brain_ai\cli\" />
+    <Folder Include="brain_ai\sync\" />
+    <Folder Include="brain_ai\vectorstore\" />
+    <Folder Include="docs\" />
+    <Folder Include="tests\" />
+  </ItemGroup>
+  <ItemGroup>
+    <Interpreter Include="env\">
+      <Id>env</Id>
+      <Version>3.13</Version>
+      <Description>env (Python 3.13)</Description>
+      <InterpreterPath>Scripts\python.exe</InterpreterPath>
+      <WindowsInterpreterPath>Scripts\pythonw.exe</WindowsInterpreterPath>
+      <PathEnvironmentVariable>PYTHONPATH</PathEnvironmentVariable>
+      <Architecture>X64</Architecture>
+    </Interpreter>
+  </ItemGroup>
+  <Import Project="$(MSBuildExtensionsPath32)\Microsoft\VisualStudio\v$(VisualStudioVersion)\Python Tools\Microsoft.PythonTools.targets" />
+  <Target Name="CoreCompile" />
+  <Target Name="Build" />
+</Project>
