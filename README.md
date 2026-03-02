@@ -245,6 +245,88 @@ flowchart LR
     style Store fill:#e8f5e9,stroke:#2e7d32,color:#000
 ```
 
+## Prerequisites: Azure AI Foundry Model Setup
+
+BCRD DeveloperAI requires two model deployments on [Azure AI Foundry](https://ai.azure.com/) (formerly Azure OpenAI Service). Follow these steps to create them.
+
+### Step 1: Create an Azure AI Foundry Resource
+
+1. Go to the [Azure Portal](https://portal.azure.com) → **Create a resource** → search **"Azure AI services"**
+2. Click **Azure OpenAI** → **Create**
+3. Fill in:
+   | Field | Value |
+   |-------|-------|
+   | **Subscription** | Your Azure subscription |
+   | **Resource group** | Create new or use existing (e.g., `bcrd-devai-rg`) |
+   | **Region** | `East US 2` (or any region with GPT-4o availability) |
+   | **Name** | e.g., `bcrd-devai-aoai` |
+   | **Pricing tier** | `Standard S0` |
+4. Click **Review + Create** → **Create**
+5. Once deployed, go to the resource → **Keys and Endpoint** → copy:
+   - **Endpoint** (e.g., `https://bcrd-devai-aoai.openai.azure.com/`)
+   - **Key 1** (API key)
+
+### Step 2: Deploy the Main Model (GPT-4o-mini)
+
+This is the primary model used by all agents for routing, reasoning, and response generation.
+
+1. Go to [Azure AI Foundry](https://ai.azure.com/) → select your resource
+2. Click **Deployments** → **+ Create deployment**
+3. Configure:
+   | Setting | Value |
+   |---------|-------|
+   | **Model** | `gpt-4o-mini` |
+   | **Deployment name** | `gpt-4o-mini` ⚠️ _Must match `config.yaml → llm.model`_ |
+   | **Deployment type** | Standard |
+   | **Tokens per minute rate limit** | 80K+ recommended (adjust to your usage) |
+4. Click **Create**
+
+### Step 3: Deploy the Code Reader Model (gpt-5.1-codex-mini)
+
+This model is used by the **Doc Improver Agent** for reading and analyzing source code. It's optional — only needed if you plan to use the Doc Improver.
+
+1. In Azure AI Foundry → **Deployments** → **+ Create deployment**
+2. Configure:
+   | Setting | Value |
+   |---------|-------|
+   | **Model** | `gpt-5.1-codex-mini` (or latest Codex model available) |
+   | **Deployment name** | `gpt-5.1-codex-mini` ⚠️ _Must match `config.yaml → code_reader_llm.model`_ |
+   | **Deployment type** | Standard |
+   | **Tokens per minute rate limit** | 30K+ recommended |
+3. Click **Create**
+
+> **Note:** Codex models use the **Responses API** (`client.responses.create()`), not the Chat Completions API. BCRD DeveloperAI handles this automatically — if the model name contains `codex`, the Code Reader LLM switches to the Responses API.
+
+### Step 4: Add Credentials to Config
+
+Put your endpoint and API key in `config.local.yaml` (gitignored — never committed):
+
+```yaml
+# config.local.yaml
+llm:
+  endpoint: "https://bcrd-devai-aoai.openai.azure.com/"
+  api_key: "<YOUR_API_KEY>"
+
+# Only needed if Doc Improver uses a different resource / key
+code_reader_llm:
+  endpoint: "https://bcrd-devai-aoai.openai.azure.com/"
+  api_key: "<YOUR_API_KEY>"
+```
+
+Or set via environment variables:
+```bash
+export BCRD_DEVAI_LLM_API_KEY="<YOUR_API_KEY>"
+```
+
+### Model Summary
+
+| Model | Config Key | Used By | API |
+|-------|-----------|---------|-----|
+| `gpt-4o-mini` | `llm.model` | Brain Agent, Knowledge, Debug, Coder, Knowledge Updater, Doc Improver (writing) | Chat Completions |
+| `gpt-5.1-codex-mini` | `code_reader_llm.model` | Doc Improver (code reading) | Responses API |
+
+> **💡 Tip:** Both models can share the same Azure AI Foundry resource and API key — just create two deployments under the same resource. The deployment name in Azure must exactly match the `model` value in `config.yaml`.
+
 ## Quick Start
 
 ### Option A: One-Command Setup (Recommended)
