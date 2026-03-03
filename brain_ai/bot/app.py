@@ -1,5 +1,5 @@
 """
-BCRD DeveloperAI Teams Bot — aiohttp web application.
+BCDR DeveloperAI Teams Bot — aiohttp web application.
 
 Exposes:
   POST /api/messages     — Bot Framework channel connector endpoint
@@ -137,7 +137,7 @@ def create_app(cfg: dict | None = None) -> web.Application:
         """Health-check endpoint."""
         return web.json_response({
             "status": "ok",
-            "service": "BCRD DeveloperAI Teams Bot",
+            "service": "BCDR DeveloperAI Teams Bot",
             "sessions": len(bot._sessions),
             "pending_auto_replies": sum(1 for p in bot._pending.values() if not p.answered),
         })
@@ -176,7 +176,7 @@ def create_app(cfg: dict | None = None) -> web.Application:
     app.router.add_post("/api/daily-sync", daily_sync)
     app.on_startup.append(on_startup)
 
-    log.info("BCRD DeveloperAI app created (app_id=%s)", app_id or "(local dev)")
+    log.info("BCDR DeveloperAI app created (app_id=%s)", app_id or "(local dev)")
     return app
 
 
@@ -187,7 +187,7 @@ def run(port: int = 3978, cfg: dict | None = None):
     logging.basicConfig(
         level=logging.INFO,
         format="%(asctime)s [%(name)s] %(levelname)s: %(message)s",
-        handlers=[logging.FileHandler("bcrd_devai_bot.log"), logging.StreamHandler()],
+        handlers=[logging.FileHandler("BCDR_devai_bot.log"), logging.StreamHandler()],
     )
     logging.getLogger("aiohttp").setLevel(logging.WARNING)
     logging.getLogger("chromadb").setLevel(logging.WARNING)
@@ -199,7 +199,7 @@ def run(port: int = 3978, cfg: dict | None = None):
     app = create_app(cfg)
 
     print(f"\n{'='*60}")
-    print(f"  🤖 BCRD DeveloperAI Teams Bot")
+    print(f"  🤖 BCDR DeveloperAI Teams Bot")
     print(f"  Bot endpoint:   http://localhost:{port}/api/messages")
     print(f"  Health check:   http://localhost:{port}/api/health")
     print(f"  Manual sync:    POST http://localhost:{port}/api/daily-sync")

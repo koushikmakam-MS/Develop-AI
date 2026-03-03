@@ -1,8 +1,8 @@
 #!/usr/bin/env pwsh
 # ============================================================
-# deploy.ps1 — BCRD DeveloperAI Azure Deployment Script
+# deploy.ps1 — BCDR DeveloperAI Azure Deployment Script
 # ============================================================
-# Deploys the BCRD DeveloperAI Teams Bot to Azure Container Apps.
+# Deploys the BCDR DeveloperAI Teams Bot to Azure Container Apps.
 #
 # Prerequisites:
 #   - Azure CLI installed and logged in (az login)
@@ -11,15 +11,15 @@
 #
 # Usage:
 #   .\deploy\deploy.ps1                                 # Interactive — prompts for values
-#   .\deploy\deploy.ps1 -ResourceGroup bcrd-devai-rg `
+#   .\deploy\deploy.ps1 -ResourceGroup BCDR-devai-rg `
 #       -BotAppId "xxx" -BotAppPassword "yyy" `
 #       -LlmApiKey "zzz" -AzureDevOpsPat "pat"
 # ============================================================
 
 param(
-    [string]$ResourceGroup = "bcrd-devai-rg",
+    [string]$ResourceGroup = "BCDR-devai-rg",
     [string]$Location = "eastus2",
-    [string]$BaseName = "bcrd-devai",
+    [string]$BaseName = "BCDR-devai",
     [string]$BotAppId,
     [string]$BotAppPassword,
     [string]$LlmApiKey,
@@ -32,7 +32,7 @@ $ErrorActionPreference = "Stop"
 Set-StrictMode -Version Latest
 
 Write-Host "`n============================================================" -ForegroundColor Cyan
-Write-Host "  BCRD DeveloperAI Azure Deployment" -ForegroundColor Cyan
+Write-Host "  BCDR DeveloperAI Azure Deployment" -ForegroundColor Cyan
 Write-Host "============================================================`n" -ForegroundColor Cyan
 
 # ── Step 0: Validate prerequisites ──────────────────────────

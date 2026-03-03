@@ -1,5 +1,5 @@
 # ============================================================
-# BCRD DeveloperAI Configuration (safe to commit)
+# BCDR DeveloperAI Configuration (safe to commit)
 # ============================================================
 # Generic / structural settings live here.
 # Secrets (PAT, API keys, endpoints) go in config.local.yaml
@@ -11,15 +11,15 @@
 #   3. Environment variables ← highest priority
 #
 # Environment variable overrides:
-#   BCRD_DEVAI_AZURE_DEVOPS_PAT
-#   BCRD_DEVAI_LLM_API_KEY
-#   BCRD_DEVAI_KUSTO_CLUSTER_URL
-#   BCRD_DEVAI_KUSTO_DATABASE
+#   BCDR_DEVAI_AZURE_DEVOPS_PAT
+#   BCDR_DEVAI_LLM_API_KEY
+#   BCDR_DEVAI_KUSTO_CLUSTER_URL
+#   BCDR_DEVAI_KUSTO_DATABASE
 # ============================================================
 
 # --- Azure DevOps Repo Sync ---
 azure_devops:
-  # pat: set in config.local.yaml or BCRD_DEVAI_AZURE_DEVOPS_PAT
+  # pat: set in config.local.yaml or BCDR_DEVAI_AZURE_DEVOPS_PAT
   repo_url: "https://msazure.visualstudio.com/One/_git/Mgmt-RecoverySvcs-BackupMgmt"
   branch: "feature/add-agent-kt-memory-doc"
   sync_paths:
@@ -28,7 +28,7 @@ azure_devops:
     - ".md"
 
 # --- LLM (Azure AI Foundry) ---
-# endpoint & api_key: set in config.local.yaml or BCRD_DEVAI_LLM_API_KEY
+# endpoint & api_key: set in config.local.yaml or BCDR_DEVAI_LLM_API_KEY
 llm:
   provider: "azure_openai"
   # endpoint: set in config.local.yaml
@@ -132,6 +132,6 @@ doc_improver:
   protected_docs:
     - "BackupMgmt_Architecture_Memory.md"
   # Branch prefix for doc improvement PRs
-  branch_prefix: "bcrd-devai/doc-improvement"
+  branch_prefix: "BCDR-devai/doc-improvement"
   # Minimum diff threshold — skip PR if fewer than this many lines changed
   min_diff_lines: 10

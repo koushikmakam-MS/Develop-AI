@@ -4,18 +4,18 @@
   "version": "1.0.0",
   "id": "{{BOT_APP_ID}}",
   "developer": {
-    "name": "BCRD DeveloperAI Team",
-    "websiteUrl": "https://github.com/your-org/bcrd-developerai",
-    "privacyUrl": "https://github.com/your-org/bcrd-developerai/blob/main/PRIVACY.md",
-    "termsOfUseUrl": "https://github.com/your-org/bcrd-developerai/blob/main/TERMS.md"
+    "name": "BCDR DeveloperAI Team",
+    "websiteUrl": "https://github.com/your-org/BCDR-developerai",
+    "privacyUrl": "https://github.com/your-org/BCDR-developerai/blob/main/PRIVACY.md",
+    "termsOfUseUrl": "https://github.com/your-org/BCDR-developerai/blob/main/TERMS.md"
   },
   "name": {
-    "short": "BCRD DeveloperAI",
-    "full": "BCRD DeveloperAI - Azure Backup Management Assistant"
+    "short": "BCDR DeveloperAI",
+    "full": "BCDR DeveloperAI - Azure Backup Management Assistant"
   },
   "description": {
     "short": "AI assistant for Azure Backup Management",
-    "full": "BCRD DeveloperAI is an AI-powered assistant that helps with Azure Backup Management questions, debugging Kusto/KQL queries, code tracing, and documentation updates. @mention it in a channel or chat directly."
+    "full": "BCDR DeveloperAI is an AI-powered assistant that helps with Azure Backup Management questions, debugging Kusto/KQL queries, code tracing, and documentation updates. @mention it in a channel or chat directly."
   },
   "icons": {
     "outline": "outline.png",

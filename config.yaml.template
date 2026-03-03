@@ -1,5 +1,5 @@
 # ============================================================
-# BCRD DeveloperAI Configuration (safe to commit)
+# BCDR DeveloperAI Configuration (safe to commit)
 # ============================================================
 # Generic / structural settings live here.
 # Secrets (PAT, API keys, endpoints) go in config.local.yaml
@@ -18,7 +18,7 @@
 
 # --- Azure DevOps Repo Sync ---
 azure_devops:
-  # pat: set in config.local.yaml or BCRD_DEVAI_AZURE_DEVOPS_PAT
+  # pat: set in config.local.yaml or BCDR_DEVAI_AZURE_DEVOPS_PAT
   # Full clone URL (HTTPS) of the repo
   repo_url: "https://msazure.visualstudio.com/One/_git/Mgmt-RecoverySvcs-BackupMgmt"
   # Branch to track
@@ -122,5 +122,5 @@ doc_improver:
     - "src/Microsoft.Azure.Management.BackupManagement"
   protected_docs:                  # Docs that are NEVER modified
     - "BackupMgmt_Architecture_Memory.md"
-  branch_prefix: "bcrd-devai/doc-improvement"   # Git branch prefix for PRs
+  branch_prefix: "BCDR-devai/doc-improvement"   # Git branch prefix for PRs
   min_diff_lines: 10               # Minimum changed lines to warrant a PR

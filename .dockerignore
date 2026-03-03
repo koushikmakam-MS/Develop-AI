@@ -17,7 +17,7 @@ build/
 .chromadb/
 .repo_cache/
 doc_gaps.json
-bcrd_devai_bot.log
+BCDR_devai_bot.log
 brainai_bot.log
 
 # Ignore test files

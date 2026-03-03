@@ -109,7 +109,7 @@ def run_daemon(cfg: dict, max_iterations: int | None = None):
 
 
 def main():
-    parser = argparse.ArgumentParser(description="BCRD DeveloperAI Doc Improver")
+    parser = argparse.ArgumentParser(description="BCDR DeveloperAI Doc Improver")
     parser.add_argument("--config", default="config.yaml", help="Path to config.yaml")
     parser.add_argument("--force", action="store_true", help="Run even if interval hasn't elapsed")
     parser.add_argument("--iterations", type=int, default=None, help="Override max iterations")

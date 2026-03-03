@@ -1,4 +1,4 @@
-"""Basic smoke tests for BCRD DeveloperAI modules."""
+"""Basic smoke tests for BCDR DeveloperAI modules."""
 
 import pytest
 from pathlib import Path

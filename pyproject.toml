@@ -3,9 +3,9 @@ requires = ["setuptools>=68.0", "wheel"]
 build-backend = "setuptools.build_meta"
 
 [project]
-name = "bcrd-devai"
+name = "BCDR-devai"
 version = "0.1.0"
-description = "BCRD DeveloperAI - Multi-agent AI assistant for Azure Backup Management"
+description = "BCDR DeveloperAI - Multi-agent AI assistant for Azure Backup Management"
 readme = "README.md"
 requires-python = ">=3.10"
 license = {text = "MIT"}
@@ -36,9 +36,9 @@ teams = [
 ]
 
 [project.scripts]
-bcrd-devai-chat = "brain_ai.cli.chat:run_chat"
-bcrd-devai-kusto = "brain_ai.kusto.server:main"
-bcrd-devai-bot = "brain_ai.bot.app:run"
+BCDR-devai-chat = "brain_ai.cli.chat:run_chat"
+BCDR-devai-kusto = "brain_ai.kusto.server:main"
+BCDR-devai-bot = "brain_ai.bot.app:run"
 
 [tool.setuptools.packages.find]
 include = ["brain_ai*"]

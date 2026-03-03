@@ -1,7 +1,7 @@
 #!/usr/bin/env pwsh
 <#
 .SYNOPSIS
-    BCRD DeveloperAI — One-command setup & initialization.
+    BCDR DeveloperAI — One-command setup & initialization.
 
 .DESCRIPTION
     Runs ALL prerequisite steps in order:
@@ -67,7 +67,7 @@ function Write-Fail($msg) {
 # ── Banner ───────────────────────────────────────────────────────────
 
 Write-Host ""
-Write-Host "  🧠 BCRD DeveloperAI Setup & Initialization" -ForegroundColor Magenta
+Write-Host "  🧠 BCDR DeveloperAI Setup & Initialization" -ForegroundColor Magenta
 Write-Host "  ==================================" -ForegroundColor Magenta
 Write-Host "  Project root: $ProjectRoot"
 Write-Host "  Config:       $ConfigPath"
@@ -260,7 +260,7 @@ if ($SkipKusto) {
 
 Write-Host ""
 Write-Host ("=" * 60) -ForegroundColor Green
-Write-Host "  🎉 BCRD DeveloperAI setup complete!" -ForegroundColor Green
+Write-Host "  🎉 BCDR DeveloperAI setup complete!" -ForegroundColor Green
 Write-Host ("=" * 60) -ForegroundColor Green
 Write-Host ""
 Write-Host "  Next steps:"

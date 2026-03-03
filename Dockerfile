@@ -1,5 +1,5 @@
 # ============================================================
-# BCRD DeveloperAI — Multi-stage Docker build
+# BCDR DeveloperAI — Multi-stage Docker build
 # ============================================================
 # Stage 1: Build layer with all build deps
 # Stage 2: Slim runtime with only what's needed
@@ -30,8 +30,8 @@ RUN pip install --no-cache-dir --prefix=/install .
 # ============================================================
 FROM python:3.13-slim AS runtime
 
-LABEL maintainer="BCRD DeveloperAI Team"
-LABEL description="BCRD DeveloperAI Teams Bot + Background Services"
+LABEL maintainer="BCDR DeveloperAI Team"
+LABEL description="BCDR DeveloperAI Teams Bot + Background Services"
 
 WORKDIR /app
 

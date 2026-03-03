@@ -1,5 +1,5 @@
 """
-BCRD DeveloperAI Teams Bot — Microsoft Teams integration using Bot Framework SDK.
+BCDR DeveloperAI Teams Bot — Microsoft Teams integration using Bot Framework SDK.
 
 Wraps the existing BrainAgent so every Teams message goes through
 the same routing + agent pipeline as the CLI chat.
@@ -149,7 +149,7 @@ class BrainAIBot(ActivityHandler):
         for member in members_added:
             if member.id != turn_context.activity.recipient.id:
                 welcome = (
-                    "👋 **Hello! I'm BCRD DeveloperAI** — your Azure Backup Management assistant.\n\n"
+                    "👋 **Hello! I'm BCDR DeveloperAI** — your Azure Backup Management assistant.\n\n"
                     "I can help you with:\n"
                     "- 📚 **Project questions** — architecture, features, docs\n"
                     "- 🔍 **Debugging** — error analysis, KQL queries, Kusto\n"

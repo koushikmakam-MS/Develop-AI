@@ -1,15 +1,15 @@
 // ============================================================
-// BCRD DeveloperAI — Azure Bicep Deployment
+// BCDR DeveloperAI — Azure Bicep Deployment
 // ============================================================
 // Deploys:
 //   1. Azure Container Registry (ACR) — stores the Docker image
 //   2. Azure Container Apps Environment — hosting platform
-//   3. Azure Container App — runs the BCRD DeveloperAI bot + all services
+//   3. Azure Container App — runs the BCDR DeveloperAI bot + all services
 //   4. Azure Bot Service — connects to Microsoft Teams
 //
 // Usage:
 //   az deployment group create \
-//     --resource-group bcrd-devai-rg \
+//     --resource-group BCDR-devai-rg \
 //     --template-file deploy/main.bicep \
 //     --parameters botAppId=<YOUR_BOT_APP_ID> \
 //                  botAppPassword=<YOUR_BOT_APP_PASSWORD> \
@@ -21,7 +21,7 @@
 param location string = resourceGroup().location
 
 @description('Base name for all resources')
-param baseName string = 'bcrd-devai'
+param baseName string = 'BCDR-devai'
 
 @description('Bot Framework App ID (from Azure Bot registration)')
 param botAppId string
@@ -119,19 +119,19 @@ resource containerApp 'Microsoft.App/containerApps@2023-05-01' = {
     template: {
       containers: [
         {
-          name: 'bcrd-devai-bot'
+          name: 'BCDR-devai-bot'
           image: '${acr.properties.loginServer}/${baseName}:latest'
           resources: {
             cpu: json('1.0')
             memory: '2Gi'
           }
           env: [
-            { name: 'BCRD_DEVAI_TEAMS_BOT_APP_ID', value: botAppId }
-            { name: 'BCRD_DEVAI_TEAMS_BOT_APP_PASSWORD', secretRef: 'bot-app-password' }
-            { name: 'BCRD_DEVAI_LLM_API_KEY', secretRef: 'llm-api-key' }
-            { name: 'BCRD_DEVAI_AZURE_DEVOPS_PAT', secretRef: 'devops-pat' }
-            { name: 'BCRD_DEVAI_KUSTO_CLUSTER_URL', value: kustoClusterUrl }
-            { name: 'BCRD_DEVAI_KUSTO_DATABASE', value: kustoDatabase }
+            { name: 'BCDR_DEVAI_TEAMS_BOT_APP_ID', value: botAppId }
+            { name: 'BCDR_DEVAI_TEAMS_BOT_APP_PASSWORD', secretRef: 'bot-app-password' }
+            { name: 'BCDR_DEVAI_LLM_API_KEY', secretRef: 'llm-api-key' }
+            { name: 'BCDR_DEVAI_AZURE_DEVOPS_PAT', secretRef: 'devops-pat' }
+            { name: 'BCDR_DEVAI_KUSTO_CLUSTER_URL', value: kustoClusterUrl }
+            { name: 'BCDR_DEVAI_KUSTO_DATABASE', value: kustoDatabase }
           ]
           probes: [
             {
@@ -176,7 +176,7 @@ resource botService 'Microsoft.BotService/botServices@2022-09-15' = {
   kind: 'azurebot'
   sku: { name: 'F0' }    // Free tier — change to S1 for production
   properties: {
-    displayName: 'BCRD DeveloperAI'
+    displayName: 'BCDR DeveloperAI'
     description: 'AI assistant for Azure Backup Management'
     msaAppId: botAppId
     endpoint: 'https://${containerApp.properties.configuration.ingress.fqdn}/api/messages'

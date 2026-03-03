@@ -1,4 +1,4 @@
-# 🧠 BCRD DeveloperAI - Azure Backup Management AI Assistant
+# 🧠 BCDR DeveloperAI - Azure Backup Management AI Assistant
 
 Multi-agent CLI assistant powered by Azure AI Foundry (GPT-4o) that connects to your Azure DevOps documentation and Kusto for intelligent project assistance and debugging. Optionally extends to Microsoft Teams as a bot.
 
@@ -247,7 +247,7 @@ flowchart LR
 
 ## Prerequisites: Azure AI Foundry Model Setup
 
-BCRD DeveloperAI requires two model deployments on [Azure AI Foundry](https://ai.azure.com/) (formerly Azure OpenAI Service). Follow these steps to create them.
+BCDR DeveloperAI requires two model deployments on [Azure AI Foundry](https://ai.azure.com/) (formerly Azure OpenAI Service). Follow these steps to create them.
 
 ### Step 1: Create an Azure AI Foundry Resource
 
@@ -257,13 +257,13 @@ BCRD DeveloperAI requires two model deployments on [Azure AI Foundry](https://ai
    | Field | Value |
    |-------|-------|
    | **Subscription** | Your Azure subscription |
-   | **Resource group** | Create new or use existing (e.g., `bcrd-devai-rg`) |
+   | **Resource group** | Create new or use existing (e.g., `BCDR-devai-rg`) |
    | **Region** | `East US 2` (or any region with GPT-4o availability) |
-   | **Name** | e.g., `bcrd-devai-aoai` |
+   | **Name** | e.g., `BCDR-devai-aoai` |
    | **Pricing tier** | `Standard S0` |
 4. Click **Review + Create** → **Create**
 5. Once deployed, go to the resource → **Keys and Endpoint** → copy:
-   - **Endpoint** (e.g., `https://bcrd-devai-aoai.openai.azure.com/`)
+   - **Endpoint** (e.g., `https://BCDR-devai-aoai.openai.azure.com/`)
    - **Key 1** (API key)
 
 ### Step 2: Deploy the Main Model (GPT-4o-mini)
@@ -295,7 +295,7 @@ This model is used by the **Doc Improver Agent** for reading and analyzing sourc
    | **Tokens per minute rate limit** | 30K+ recommended |
 3. Click **Create**
 
-> **Note:** Codex models use the **Responses API** (`client.responses.create()`), not the Chat Completions API. BCRD DeveloperAI handles this automatically — if the model name contains `codex`, the Code Reader LLM switches to the Responses API.
+> **Note:** Codex models use the **Responses API** (`client.responses.create()`), not the Chat Completions API. BCDR DeveloperAI handles this automatically — if the model name contains `codex`, the Code Reader LLM switches to the Responses API.
 
 ### Step 4: Add Credentials to Config
 
@@ -304,18 +304,18 @@ Put your endpoint and API key in `config.local.yaml` (gitignored — never commi
 ```yaml
 # config.local.yaml
 llm:
-  endpoint: "https://bcrd-devai-aoai.openai.azure.com/"
+  endpoint: "https://BCDR-devai-aoai.openai.azure.com/"
   api_key: "<YOUR_API_KEY>"
 
 # Only needed if Doc Improver uses a different resource / key
 code_reader_llm:
-  endpoint: "https://bcrd-devai-aoai.openai.azure.com/"
+  endpoint: "https://BCDR-devai-aoai.openai.azure.com/"
   api_key: "<YOUR_API_KEY>"
 ```
 
 Or set via environment variables:
 ```bash
-export BCRD_DEVAI_LLM_API_KEY="<YOUR_API_KEY>"
+export BCDR_DEVAI_LLM_API_KEY="<YOUR_API_KEY>"
 ```
 
 ### Model Summary
@@ -412,7 +412,7 @@ into a separate ChromaDB collection so the Coder Agent can trace code paths.
 python run_chat.py
 ```
 
-This is the **primary interface** for BCRD DeveloperAI. `run_chat.py` runs **automatic pre-flight checks** before launching the chat:
+This is the **primary interface** for BCDR DeveloperAI. `run_chat.py` runs **automatic pre-flight checks** before launching the chat:
 
 | Check | What it does |
 |-------|-------------|
@@ -454,7 +454,7 @@ Run `run_daily.py` via cron or Windows Task Scheduler to keep both docs and sour
 
 ```bash
 # Linux/Mac cron (daily at 2 AM)
-0 2 * * * cd /path/to/bcrd_devai && python run_daily.py >> daily_sync.log 2>&1
+0 2 * * * cd /path/to/BCDR_devai && python run_daily.py >> daily_sync.log 2>&1
 
 # Or run manually
 python run_daily.py
@@ -505,7 +505,7 @@ Safety nets:
 ## Project Structure
 
 ```
-BCRD-DeveloperAI/
+BCDR-DeveloperAI/
 ├── brain_ai/                    # Python package
 │   ├── config.py                # Configuration loader
 │   ├── llm_client.py            # Azure AI Foundry LLM client
@@ -622,7 +622,7 @@ doc_improver:
     - "src/Microsoft.Azure.Management.BackupManagement"
   protected_docs:               # Docs that are NEVER modified
     - "BackupMgmt_Architecture_Memory.md"
-  branch_prefix: "bcrd-devai/doc-improvement"
+  branch_prefix: "BCDR-devai/doc-improvement"
   min_diff_lines: 10            # Minimum changed lines to create a PR
 ```
 
@@ -640,15 +640,15 @@ doc_improver:
 
 ### Microsoft Teams Bot
 
-BCRD DeveloperAI can optionally be deployed as a Microsoft Teams bot, providing the same
+BCDR DeveloperAI can optionally be deployed as a Microsoft Teams bot, providing the same
 multi-agent experience directly in Teams channels and chats.
 
 #### Features
 
 | Feature | Description |
 |---------|-------------|
-| **@mention responses** | Tag @BCRD-DeveloperAI in any channel to ask a question |
-| **Auto-reply (10 min)** | If nobody answers a channel question within 10 minutes, BCRD DeveloperAI responds automatically |
+| **@mention responses** | Tag @BCDR-DeveloperAI in any channel to ask a question |
+| **Auto-reply (10 min)** | If nobody answers a channel question within 10 minutes, BCDR DeveloperAI responds automatically |
 | **1:1 chat** | Direct message the bot for private conversations |
 | **Session isolation** | Each conversation gets its own BrainAgent session |
 | **Commands** | `help`, `clear`, `agents` — same as the CLI |
@@ -657,7 +657,7 @@ multi-agent experience directly in Teams channels and chats.
 
 1. Install Teams bot dependencies:
    ```bash
-   pip install "bcrd-devai[teams]"
+   pip install "BCDR-devai[teams]"
    # or: pip install botbuilder-core aiohttp
    ```
 
@@ -689,7 +689,7 @@ multi-agent experience directly in Teams channels and chats.
 
 ### Deployment (Azure Container Apps)
 
-For production use, BCRD DeveloperAI ships with Docker + Azure Bicep infrastructure for one-command cloud deployment.
+For production use, BCDR DeveloperAI ships with Docker + Azure Bicep infrastructure for one-command cloud deployment.
 
 #### What Gets Deployed
 
@@ -710,7 +710,7 @@ For production use, BCRD DeveloperAI ships with Docker + Azure Bicep infrastruct
 #### Option A: One-Command Deploy (Recommended)
 
 ```powershell
-.\deploy\deploy.ps1 -ResourceGroup bcrd-devai-rg `
+.\deploy\deploy.ps1 -ResourceGroup BCDR-devai-rg `
     -BotAppId "<APP_ID>" `
     -BotAppPassword "<APP_PASSWORD>" `
     -LlmApiKey "<LLM_KEY>" `
@@ -733,39 +733,39 @@ cp .env.template .env
 docker compose up -d
 
 # Check logs
-docker compose logs -f bcrd-devai-bot
+docker compose logs -f BCDR-devai-bot
 
 # Trigger manual sync
-docker compose exec bcrd-devai-bot python run_daily.py
+docker compose exec BCDR-devai-bot python run_daily.py
 ```
 
 #### Option C: Manual Azure Deployment
 
 ```bash
 # 1. Create resource group
-az group create --name bcrd-devai-rg --location eastus2
+az group create --name BCDR-devai-rg --location eastus2
 
 # 2. Deploy infrastructure
 az deployment group create \
-  --resource-group bcrd-devai-rg \
+  --resource-group BCDR-devai-rg \
   --parameters deploy/parameters.json
 
 # 3. Build & push image
-az acr login --name bcrddevaiacr
-docker build -t bcrddevaiacr.azurecr.io/bcrd-devai:latest .
-docker push bcrddevaiacr.azurecr.io/bcrd-devai:latest
+az acr login --name BCDRdevaiacr
+docker build -t BCDRdevaiacr.azurecr.io/BCDR-devai:latest .
+docker push BCDRdevaiacr.azurecr.io/BCDR-devai:latest
 
 # 4. Update container app
-az containerapp update --name bcrd-devai-bot \
-  --resource-group bcrd-devai-rg \
-  --image bcrddevaiacr.azurecr.io/bcrd-devai:latest
+az containerapp update --name BCDR-devai-bot \
+  --resource-group BCDR-devai-rg \
+  --image BCDRdevaiacr.azurecr.io/BCDR-devai:latest
 ```
 
 #### Updating After Code Changes
 
 ```powershell
 # Rebuild and push image only (skip infra redeployment)
-.\deploy\deploy.ps1 -SkipDeploy -ResourceGroup bcrd-devai-rg
+.\deploy\deploy.ps1 -SkipDeploy -ResourceGroup BCDR-devai-rg
 ```
 
 ## Future Roadmap

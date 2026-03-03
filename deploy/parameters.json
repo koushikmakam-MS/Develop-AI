@@ -4,7 +4,7 @@
   "contentVersion": "1.0.0.0",
   "parameters": {
     "baseName": {
-      "value": "bcrd-devai"
+      "value": "BCDR-devai"
     },
     "botAppId": {
       "value": "<YOUR_BOT_APP_ID>"

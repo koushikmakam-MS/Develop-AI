@@ -1,5 +1,5 @@
 """
-Configuration loader for BCRD DeveloperAI.
+Configuration loader for BCDR DeveloperAI.
 
 Reads config.yaml (generic, committed) and merges config.local.yaml
 (secrets/overrides, gitignored) on top.  Environment variables have
@@ -8,7 +8,7 @@ the highest priority.
 Load order (last wins):
   1. config.yaml           — structural settings (committed)
   2. config.local.yaml     — secrets & overrides (gitignored)
-  3. Environment variables — BCRD_DEVAI_AZURE_DEVOPS_PAT, etc.
+  3. Environment variables — BCDR_DEVAI_AZURE_DEVOPS_PAT, etc.
 """
 
 import os
@@ -66,10 +66,10 @@ def load_config(config_path: Path | str | None = None) -> Dict[str, Any]:
 
     # Environment-variable overrides for secrets (highest priority)
     env_overrides = {
-        ("azure_devops", "pat"): "BCRD_DEVAI_AZURE_DEVOPS_PAT",
-        ("llm", "api_key"): "BCRD_DEVAI_LLM_API_KEY",
-        ("kusto", "cluster_url"): "BCRD_DEVAI_KUSTO_CLUSTER_URL",
-        ("kusto", "database"): "BCRD_DEVAI_KUSTO_DATABASE",
+        ("azure_devops", "pat"): "BCDR_DEVAI_AZURE_DEVOPS_PAT",
+        ("llm", "api_key"): "BCDR_DEVAI_LLM_API_KEY",
+        ("kusto", "cluster_url"): "BCDR_DEVAI_KUSTO_CLUSTER_URL",
+        ("kusto", "database"): "BCDR_DEVAI_KUSTO_DATABASE",
     }
     for (section, key), env_var in env_overrides.items():
         val = os.environ.get(env_var)

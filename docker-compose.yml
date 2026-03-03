@@ -1,20 +1,20 @@
 # ============================================================
-# BCRD DeveloperAI — Docker Compose
+# BCDR DeveloperAI — Docker Compose
 # ============================================================
 # All-in-one deployment: Teams Bot + Kusto MCP + Background jobs
 #
 # Usage:
 #   docker compose up -d                  # Start all services
-#   docker compose logs -f bcrd-devai-bot    # Follow bot logs
-#   docker compose exec bcrd-devai-bot python run_daily.py  # Manual sync
+#   docker compose logs -f BCDR-devai-bot    # Follow bot logs
+#   docker compose exec BCDR-devai-bot python run_daily.py  # Manual sync
 # ============================================================
 
 services:
-  bcrd-devai-bot:
+  BCDR-devai-bot:
     build:
       context: .
       dockerfile: Dockerfile
-    container_name: bcrd-devai-bot
+    container_name: BCDR-devai-bot
     restart: unless-stopped
     ports:
       - "${BOT_PORT:-3978}:3978"
@@ -28,13 +28,13 @@ services:
       - ./docs:/app/docs
     environment:
       # Override config.yaml values with env vars
-      - BCRD_DEVAI_LLM_API_KEY=${BCRD_DEVAI_LLM_API_KEY:-}
-      - BCRD_DEVAI_AZURE_DEVOPS_PAT=${BCRD_DEVAI_AZURE_DEVOPS_PAT:-}
-      - BCRD_DEVAI_KUSTO_CLUSTER_URL=${BCRD_DEVAI_KUSTO_CLUSTER_URL:-}
-      - BCRD_DEVAI_KUSTO_DATABASE=${BCRD_DEVAI_KUSTO_DATABASE:-}
+      - BCDR_DEVAI_LLM_API_KEY=${BCDR_DEVAI_LLM_API_KEY:-}
+      - BCDR_DEVAI_AZURE_DEVOPS_PAT=${BCDR_DEVAI_AZURE_DEVOPS_PAT:-}
+      - BCDR_DEVAI_KUSTO_CLUSTER_URL=${BCDR_DEVAI_KUSTO_CLUSTER_URL:-}
+      - BCDR_DEVAI_KUSTO_DATABASE=${BCDR_DEVAI_KUSTO_DATABASE:-}
       # Bot Framework credentials
-      - BCRD_DEVAI_TEAMS_BOT_APP_ID=${BCRD_DEVAI_TEAMS_BOT_APP_ID:-}
-      - BCRD_DEVAI_TEAMS_BOT_APP_PASSWORD=${BCRD_DEVAI_TEAMS_BOT_APP_PASSWORD:-}
+      - BCDR_DEVAI_TEAMS_BOT_APP_ID=${BCDR_DEVAI_TEAMS_BOT_APP_ID:-}
+      - BCDR_DEVAI_TEAMS_BOT_APP_PASSWORD=${BCDR_DEVAI_TEAMS_BOT_APP_PASSWORD:-}
     healthcheck:
       test: ["CMD", "curl", "-f", "http://localhost:3978/api/health"]
       interval: 30s

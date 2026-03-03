@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-Start the BCRD DeveloperAI Microsoft Teams Bot with all background services.
+Start the BCDR DeveloperAI Microsoft Teams Bot with all background services.
 
 Services started:
   - Teams Bot (Bot Framework, port 3978)
@@ -19,7 +19,7 @@ import sys
 
 
 def main():
-    parser = argparse.ArgumentParser(description="BCRD DeveloperAI Teams Bot")
+    parser = argparse.ArgumentParser(description="BCDR DeveloperAI Teams Bot")
     parser.add_argument("--port", type=int, default=3978, help="Port (default: 3978)")
     parser.add_argument("--config", type=str, default=None, help="Path to config.yaml")
     args = parser.parse_args()
@@ -30,7 +30,7 @@ def main():
         print(
             f"❌ Missing dependency: {e}\n\n"
             "Install Teams bot dependencies:\n"
-            '  pip install "bcrd-devai[teams]"\n'
+            '  pip install "BCDR-devai[teams]"\n'
             "  or: pip install botbuilder-core aiohttp\n"
         )
         sys.exit(1)

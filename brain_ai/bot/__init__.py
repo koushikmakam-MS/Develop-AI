@@ -1,1 +1,1 @@
-"""BCRD DeveloperAI Microsoft Teams Bot integration."""
+"""BCDR DeveloperAI Microsoft Teams Bot integration."""

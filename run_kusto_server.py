@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-Start the BCRD DeveloperAI Kusto MCP Server.
+Start the BCDR DeveloperAI Kusto MCP Server.
 
 This runs a local HTTP service that exposes KQL query execution as
 MCP-style tool endpoints. The Debug Agent connects to this automatically.

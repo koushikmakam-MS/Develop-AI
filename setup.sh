@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # ============================================================
-# BCRD DeveloperAI — One-command setup & initialization (Linux / Mac / WSL)
+# BCDR DeveloperAI — One-command setup & initialization (Linux / Mac / WSL)
 # ============================================================
 #
 # Runs ALL prerequisite steps in order:
@@ -67,7 +67,7 @@ fail() { echo "  ❌ $1"; }
 # ── Banner ───────────────────────────────────────────────────────────
 
 echo ""
-echo "  🧠 BCRD DeveloperAI Setup & Initialization"
+echo "  🧠 BCDR DeveloperAI Setup & Initialization"
 echo "  =================================="
 echo "  Project root: $PROJECT_ROOT"
 echo "  Config:       $CONFIG_PATH"
@@ -233,7 +233,7 @@ fi
 
 echo ""
 echo "============================================================"
-echo "  🎉 BCRD DeveloperAI setup complete!"
+echo "  🎉 BCDR DeveloperAI setup complete!"
 echo "============================================================"
 echo ""
 echo "  Next steps:"

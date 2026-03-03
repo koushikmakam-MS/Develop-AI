@@ -262,7 +262,7 @@ class AzureDevOpsPR:
         # Generate a unique branch name
         timestamp = datetime.now(timezone.utc).strftime("%Y%m%d-%H%M%S")
         safe_summary = correction_summary[:40].replace(" ", "-").replace("/", "-").lower()
-        branch_name = f"bcrd-devai/doc-correction/{safe_summary}-{timestamp}"
+        branch_name = f"BCDR-devai/doc-correction/{safe_summary}-{timestamp}"
 
         log.info("Creating correction PR: branch=%s, file=%s", branch_name, file_path)
 
@@ -270,20 +270,20 @@ class AzureDevOpsPR:
         self._create_branch(branch_name, self.target_branch)
 
         # 2. Push the corrected file
-        commit_msg = f"[BCRD DeveloperAI] Doc correction: {correction_summary}"
+        commit_msg = f"[BCDR DeveloperAI] Doc correction: {correction_summary}"
         self.push_file_change(branch_name, file_path, new_content, commit_msg)
 
         # 3. Create PR
         pr_result = self.create_pull_request(
             source_branch=branch_name,
             target_branch=self.target_branch,
-            title=f"[BCRD DeveloperAI Auto-Correction] {correction_summary}",
+            title=f"[BCDR DeveloperAI Auto-Correction] {correction_summary}",
             description=(
                 f"## Automated Documentation Correction\n\n"
                 f"**File:** `{file_path}`\n\n"
                 f"**Summary:** {correction_summary}\n\n"
                 f"---\n"
-                f"_This PR was created automatically by the BCRD DeveloperAI Knowledge Updater Agent "
+                f"_This PR was created automatically by the BCDR DeveloperAI Knowledge Updater Agent "
                 f"based on a user correction during a chat session._"
             ),
         )
@@ -310,7 +310,7 @@ class AzureDevOpsPR:
         """
         timestamp = datetime.now(timezone.utc).strftime("%Y%m%d-%H%M%S")
         safe_summary = overall_summary[:40].replace(" ", "-").replace("/", "-").lower()
-        branch_name = f"bcrd-devai/doc-corrections/{safe_summary}-{timestamp}"
+        branch_name = f"BCDR-devai/doc-corrections/{safe_summary}-{timestamp}"
 
         log.info(
             "Creating batch correction PR: branch=%s, files=%d",
@@ -347,7 +347,7 @@ class AzureDevOpsPR:
             ],
             "commits": [
                 {
-                    "comment": f"[BCRD DeveloperAI] Doc corrections: {overall_summary}",
+                    "comment": f"[BCDR DeveloperAI] Doc corrections: {overall_summary}",
                     "changes": changes,
                 }
             ],
@@ -368,7 +368,7 @@ class AzureDevOpsPR:
             f"**{len(file_changes)} file(s) updated:**\n{file_list}\n\n"
             f"**Summary:** {overall_summary}\n\n"
             f"---\n"
-            f"_This PR was created automatically by the BCRD DeveloperAI Knowledge Updater Agent "
+            f"_This PR was created automatically by the BCDR DeveloperAI Knowledge Updater Agent "
             f"based on user corrections during a chat session._"
         )
 
@@ -376,7 +376,7 @@ class AzureDevOpsPR:
         pr_result = self.create_pull_request(
             source_branch=branch_name,
             target_branch=self.target_branch,
-            title=f"[BCRD DeveloperAI] {overall_summary}",
+            title=f"[BCDR DeveloperAI] {overall_summary}",
             description=description,
         )
 

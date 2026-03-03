@@ -1,5 +1,5 @@
 # ============================================================
-# BCRD DeveloperAI Local Configuration — SECRETS & OVERRIDES
+# BCDR DeveloperAI Local Configuration — SECRETS & OVERRIDES
 # ============================================================
 # Copy this file to config.local.yaml and fill in your values.
 # This file is gitignored — NEVER commit it.

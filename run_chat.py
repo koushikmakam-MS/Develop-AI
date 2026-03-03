@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-Start the BCRD DeveloperAI CLI chat interface.
+Start the BCDR DeveloperAI CLI chat interface.
 
 Runs pre-flight checks first (config, ChromaDB, Kusto MCP server)
 then launches the interactive chat.
@@ -21,7 +21,7 @@ from brain_ai.cli.chat import run_chat
 
 
 def main():
-    parser = argparse.ArgumentParser(description="BCRD DeveloperAI CLI Chat")
+    parser = argparse.ArgumentParser(description="BCDR DeveloperAI CLI Chat")
     parser.add_argument("--config", type=str, default=None, help="Path to config.yaml")
     parser.add_argument(
         "--no-kusto",

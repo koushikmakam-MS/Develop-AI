@@ -1,5 +1,5 @@
 """
-CLI Chat Interface for BCRD DeveloperAI.
+CLI Chat Interface for BCDR DeveloperAI.
 
 Provides a rich terminal chat experience with:
 - Colored output (agent identification)
@@ -35,7 +35,7 @@ AGENT_COLORS = {
 }
 
 WELCOME_TEXT = """
-# ?? BCRD DeveloperAI - Azure Backup Management Assistant
+# ?? BCDR DeveloperAI - Azure Backup Management Assistant
 
 Welcome! I can help you with:
 - **Project questions** → Knowledge Agent (architecture, features, config, etc.)
@@ -192,7 +192,7 @@ def run_chat(config_path: Optional[str] = None):
     logging.basicConfig(
         level=logging.INFO,
         format="%(asctime)s [%(name)s] %(levelname)s: %(message)s",
-        handlers=[logging.FileHandler("bcrd_devai.log"), logging.StreamHandler()],
+        handlers=[logging.FileHandler("BCDR_devai.log"), logging.StreamHandler()],
     )
     # Quiet down noisy loggers
     logging.getLogger("chromadb").setLevel(logging.WARNING)
@@ -205,7 +205,7 @@ def run_chat(config_path: Optional[str] = None):
         cfg = get_config(config_path)
         brain = BrainAgent(cfg)
     except Exception as e:
-        console.print(f"[red]Failed to initialize BCRD DeveloperAI: {e}[/red]")
+        console.print(f"[red]Failed to initialize BCDR DeveloperAI: {e}[/red]")
         console.print("[dim]Check your config.yaml and try again.[/dim]")
         return
 

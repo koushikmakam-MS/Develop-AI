@@ -1,5 +1,5 @@
 """
-Startup checks and dependency launcher for BCRD DeveloperAI.
+Startup checks and dependency launcher for BCDR DeveloperAI.
 
 Ensures all required services and prerequisites are ready before
 starting the chat interface:
@@ -191,12 +191,12 @@ def _check_llm(cfg: Dict[str, Any]) -> bool:
 
     if not endpoint or endpoint.startswith("<"):
         console.print("[red]✗ missing endpoint[/red]")
-        console.print("[red]  Set llm.endpoint in config.local.yaml or BCRD_DEVAI_LLM_API_KEY env var[/red]")
+        console.print("[red]  Set llm.endpoint in config.local.yaml or BCDR_DEVAI_LLM_API_KEY env var[/red]")
         return False
 
     if not api_key or api_key.startswith("<"):
         console.print("[red]✗ missing api_key[/red]")
-        console.print("[red]  Set llm.api_key in config.local.yaml or BCRD_DEVAI_LLM_API_KEY env var[/red]")
+        console.print("[red]  Set llm.api_key in config.local.yaml or BCDR_DEVAI_LLM_API_KEY env var[/red]")
         return False
 
     console.print(f"[green]✓[/green] ({llm_cfg.get('model', 'unknown')})")
@@ -247,7 +247,7 @@ def preflight_check(
     auto_start_kusto: bool = True,
 ) -> Tuple[Dict[str, Any], Optional[subprocess.Popen]]:
     """
-    Run all pre-flight checks before starting BCRD DeveloperAI.
+    Run all pre-flight checks before starting BCDR DeveloperAI.
 
     Args:
         config_path: Optional path to config.yaml
@@ -260,7 +260,7 @@ def preflight_check(
         SystemExit if fatal checks fail.
     """
     console.print()
-    console.print("[bold]🔍 BCRD DeveloperAI Pre-flight Checks[/bold]")
+    console.print("[bold]🔍 BCDR DeveloperAI Pre-flight Checks[/bold]")
     console.print("─" * 40)
 
     fatal = False

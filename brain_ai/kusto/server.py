@@ -2,7 +2,7 @@
 Kusto MCP Server — exposes KQL query execution as MCP-style tool endpoints.
 
 Runs as a lightweight local HTTP service (FastAPI/uvicorn) so that:
-  - BCRD DeveloperAI agents can call KQL queries via simple HTTP POST
+  - BCDR DeveloperAI agents can call KQL queries via simple HTTP POST
   - Authentication (az cli, managed identity, device code) is handled once at startup
   - Queries are validated (read-only) before execution
   - Results are returned as structured JSON
@@ -169,7 +169,7 @@ def create_app(cfg: dict | None = None):
         cfg = get_config()
 
     app = FastAPI(
-        title="BCRD DeveloperAI Kusto MCP Server",
+        title="BCDR DeveloperAI Kusto MCP Server",
         description="MCP-style tool server for executing KQL queries against Azure Data Explorer",
         version="0.1.0",
     )
@@ -304,7 +304,7 @@ def main():
     """Run the Kusto MCP server."""
     import argparse
 
-    parser = argparse.ArgumentParser(description="BCRD DeveloperAI Kusto MCP Server")
+    parser = argparse.ArgumentParser(description="BCDR DeveloperAI Kusto MCP Server")
     parser.add_argument("--port", type=int, default=8701, help="Port to listen on")
     parser.add_argument("--host", type=str, default="127.0.0.1", help="Host to bind to")
     parser.add_argument("--config", type=str, default=None, help="Path to config.yaml")
@@ -326,7 +326,7 @@ def main():
         return
 
     app = create_app()
-    print(f"\n🔌 BCRD DeveloperAI Kusto MCP Server starting on http://{args.host}:{args.port}")
+    print(f"\n🔌 BCDR DeveloperAI Kusto MCP Server starting on http://{args.host}:{args.port}")
     print(f"   Tools endpoint: http://{args.host}:{args.port}/tools")
     print(f"   Health check:   http://{args.host}:{args.port}/health")
     print(f"   Execute KQL:    POST http://{args.host}:{args.port}/tools/execute_kql\n")

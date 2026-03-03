@@ -8,12 +8,12 @@ Performs:
   3. Re-index changed files into ChromaDB
 
 Example cron (daily at 2 AM):
-  0 2 * * * cd /path/to/bcrd_devai && python run_daily.py >> daily_sync.log 2>&1
+  0 2 * * * cd /path/to/BCDR_devai && python run_daily.py >> daily_sync.log 2>&1
 
 Example Windows Task Scheduler:
   Action: python
   Arguments: run_daily.py
-  Start in: C:\...\bcrd_devai
+  Start in: C:\...\BCDR_devai
 """
 
 import logging

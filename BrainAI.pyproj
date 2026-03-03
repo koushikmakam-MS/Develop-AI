@@ -8,7 +8,7 @@
     <SearchPath>.</SearchPath>
     <WorkingDirectory>.</WorkingDirectory>
     <OutputPath>.</OutputPath>
-    <Name>BCRD-DeveloperAI</Name>
+    <Name>BCDR-DeveloperAI</Name>
     <RootNamespace>brain_ai</RootNamespace>
     <InterpreterId>MSBuild|env|$(MSBuildProjectFullPath)</InterpreterId>
   </PropertyGroup>

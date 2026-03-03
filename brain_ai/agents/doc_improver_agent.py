@@ -279,7 +279,7 @@ class DocImproverAgent:
         imp_cfg = cfg.get("doc_improver", {})
         self.max_iterations = imp_cfg.get("max_iterations", 3)
         self.protected_docs = set(imp_cfg.get("protected_docs", ["BackupMgmt_Architecture_Memory.md"]))
-        self.branch_prefix = imp_cfg.get("branch_prefix", "bcrd-devai/doc-improvement")
+        self.branch_prefix = imp_cfg.get("branch_prefix", "BCDR-devai/doc-improvement")
         self.min_diff_lines = imp_cfg.get("min_diff_lines", 10)
         self.code_folders = imp_cfg.get("code_folders", [])
         self.max_new_docs_per_cycle = imp_cfg.get("max_new_docs_per_cycle", 15)
