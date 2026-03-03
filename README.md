@@ -103,7 +103,7 @@ The Debug Agent runs a structured investigation: first a broad standard flow, th
 
 ```mermaid
 flowchart TD
-    Start([User: "Debug TaskId X"]) --> Classify["🔍 Classify GUIDs<br/><i>TaskId vs SubscriptionId vs RequestId</i>"]
+    Start([User: Debug TaskId X]) --> Classify["🔍 Classify GUIDs<br/><i>TaskId vs SubscriptionId vs RequestId</i>"]
     Classify -->|Unknown GUID| Ask["❓ Ask user:<br/>'Is this a TaskId, RequestId,<br/>or SubscriptionId?'"]
     Classify -->|Classified| TimeRange["⏱️ Extract / prompt<br/>for time range"]
     Ask --> TimeRange
