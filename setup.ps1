@@ -11,8 +11,8 @@
       4. Sync docs from Azure DevOps
       5. Index docs into ChromaDB
       6. Sync + index source code into ChromaDB
-      7. (Optional) Start the Kusto MCP server
-      8. (Optional) Run the Doc Improver bootstrap
+      7. (Optional) Run the Doc Improver bootstrap
+      8. (Optional) Start the Kusto MCP server
 
 .PARAMETER Force
     Force re-sync and re-index everything from scratch.
@@ -131,7 +131,9 @@ if (-not (Test-Path $ConfigPath)) {
 }
 
 # 3b. config.local.yaml (secrets — gitignored)
-$localConfigPath = Join-Path (Split-Path $ConfigPath) "config.local.yaml"
+$configDir = Split-Path (Resolve-Path $ConfigPath) -Parent
+if (-not $configDir) { $configDir = $ProjectRoot }
+$localConfigPath = Join-Path $configDir "config.local.yaml"
 if (-not (Test-Path $localConfigPath)) {
     if (Test-Path "config.local.yaml.template") {
         Copy-Item "config.local.yaml.template" $localConfigPath

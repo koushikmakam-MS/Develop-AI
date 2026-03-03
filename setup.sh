@@ -49,11 +49,9 @@ done
 PROJECT_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 cd "$PROJECT_ROOT"
 
-FORCE_ARG=""
-if $FORCE; then FORCE_ARG="--force"; fi
-
-CONFIG_ARG=""
-if [[ "$CONFIG_PATH" != "config.yaml" ]]; then CONFIG_ARG="--config $CONFIG_PATH"; fi
+EXTRA_ARGS=()
+if $FORCE; then EXTRA_ARGS+=("--force"); fi
+if [[ "$CONFIG_PATH" != "config.yaml" ]]; then EXTRA_ARGS+=("--config" "$CONFIG_PATH"); fi
 
 step() {
     echo ""
@@ -98,10 +96,16 @@ ok "Virtual environment activated."
 step 2 "Install Python dependencies"
 
 echo "  Installing from requirements.txt..."
-pip install -q -r requirements.txt
+if ! pip install -q -r requirements.txt; then
+    fail "pip install -r requirements.txt failed."
+    exit 1
+fi
 
 echo "  Installing package in editable mode..."
-pip install -q -e .
+if ! pip install -q -e .; then
+    fail "pip install -e . failed."
+    exit 1
+fi
 
 ok "All dependencies installed."
 
@@ -158,7 +162,7 @@ fi
 
 step 4 "Sync docs from Azure DevOps"
 
-if python run_sync.py $FORCE_ARG $CONFIG_ARG; then
+if python run_sync.py "${EXTRA_ARGS[@]}"; then
     ok "Docs synced."
 else
     fail "Doc sync failed — check your Azure DevOps PAT and repo URL."
@@ -169,7 +173,7 @@ fi
 
 step 5 "Index docs into ChromaDB"
 
-if python run_index.py $FORCE_ARG $CONFIG_ARG; then
+if python run_index.py "${EXTRA_ARGS[@]}"; then
     ok "Docs indexed into ChromaDB."
 else
     fail "Doc indexing failed."
@@ -179,7 +183,7 @@ fi
 
 step 6 "Index source code into ChromaDB"
 
-if python run_code_index.py $FORCE_ARG $CONFIG_ARG; then
+if python run_code_index.py "${EXTRA_ARGS[@]}"; then
     ok "Source code indexed into ChromaDB."
 else
     fail "Code indexing failed."
