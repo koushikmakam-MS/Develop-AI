@@ -469,6 +469,7 @@ class KnowledgeUpdaterAgent:
                 "correction": f"New document for: {topic}",
                 "summary": summary,
                 "new_content": new_content,
+                "is_new": True,
             })
 
             # Clear the pending new-doc context
@@ -609,10 +610,12 @@ class KnowledgeUpdaterAgent:
             # Build file changes list for the batch PR
             file_changes = []
             for pc in self._pending_corrections:
+                change_type = "add" if pc.get("is_new") else "edit"
                 file_changes.append({
                     "file_path": pc["repo_path"],
                     "new_content": pc["new_content"],
                     "summary": pc["summary"],
+                    "changeType": change_type,
                 })
 
             # Generate an overall summary

@@ -474,6 +474,9 @@ class TestNewDocCreation:
         assert updater.pending_count == 1
         assert updater._pending_new_doc is None
 
+        # New docs must be flagged as is_new so the PR uses changeType="add"
+        assert updater._pending_corrections[0]["is_new"] is True
+
         # Verify file was written
         doc_path = Path(updater.local_docs_dir) / "DPP" / "Feature_RetryCircuitBreaker.md"
         assert doc_path.exists()
@@ -577,6 +580,65 @@ class TestNewDocCreation:
         updater.handle("create doc", [])
         assert updater._pending_new_doc is None
         assert updater.pending_count == 1
+
+    def test_submit_sets_changetype_add_for_new_docs(self, updater):
+        """When submitting, new docs get changeType='add', edits get 'edit'."""
+        # Stage a regular edit (no is_new)
+        updater._pending_corrections.append({
+            "doc_source": "DPP/Feature_Jobs.md",
+            "repo_path": "docs/agentKT/DPP/Feature_Jobs.md",
+            "correction": "Fixed a typo",
+            "summary": "Typo fix",
+            "new_content": "# Updated\n",
+        })
+        # Stage a new doc (is_new=True)
+        updater._pending_corrections.append({
+            "doc_source": "NewFolder/Feature_New.md",
+            "repo_path": "docs/agentKT/NewFolder/Feature_New.md",
+            "correction": "New document for: new topic",
+            "summary": "New doc: Feature_New.md",
+            "new_content": "# Brand New\n",
+            "is_new": True,
+        })
+
+        # Capture what create_batch_correction_pr receives
+        updater.pr_helper.create_batch_correction_pr = MagicMock(return_value={
+            "branch_name": "test-branch",
+            "web_url": "https://example.com/pr/1",
+            "title": "Test PR",
+        })
+        updater._generate_overall_summary = MagicMock(return_value="mixed changes")
+
+        updater._submit_pending_corrections()
+
+        call_args = updater.pr_helper.create_batch_correction_pr.call_args
+        file_changes = call_args.kwargs.get("file_changes") or call_args[1].get("file_changes")
+        assert file_changes[0]["changeType"] == "edit"
+        assert file_changes[1]["changeType"] == "add"
+
+    def test_regular_correction_has_no_is_new(self, updater):
+        """Regular corrections (existing doc edits) should not have is_new."""
+        # Set up a doc that exists locally for the correction flow
+        doc_dir = Path(updater.local_docs_dir) / "DPP"
+        doc_dir.mkdir(parents=True, exist_ok=True)
+        doc_file = doc_dir / "Feature_Jobs.md"
+        doc_file.write_text("# Original Content\n", encoding="utf-8")
+
+        updater.indexer.search = MagicMock(return_value=[
+            {"source": "DPP/Feature_Jobs.md", "score": 0.90, "text": "jobs docs"},
+        ])
+        updater._extract_correction = MagicMock(return_value={
+            "is_correction": True,
+            "correction": "Jobs can now retry automatically",
+            "search_query": "jobs retry",
+        })
+        updater._apply_correction = MagicMock(return_value="# Updated Jobs\n\nRetry info.\n")
+        updater._generate_single_summary = MagicMock(return_value="Added retry info")
+        updater._to_repo_path = MagicMock(return_value="docs/agentKT/DPP/Feature_Jobs.md")
+
+        updater.handle("Jobs can now retry automatically", [])
+        assert updater.pending_count == 1
+        assert updater._pending_corrections[0].get("is_new") is None
 
 
 class TestToRepoPath:
