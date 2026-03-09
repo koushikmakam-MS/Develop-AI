@@ -396,9 +396,6 @@ class TestNewDocCreation:
     def updater_cfg(self, tmp_path):
         docs = tmp_path / "docs" / "agentKT"
         docs.mkdir(parents=True)
-        # Create the expected sub-folders so _allowed_subfolders() recognises them
-        (docs / "DPP").mkdir()
-        (docs / "RSV").mkdir()
         return {
             "llm": {"model": "m", "endpoint": "e", "api_key": "k", "max_tokens": 4096},
             "vectorstore": {"persist_directory": ".chromadb", "collection_name": "c",
@@ -510,18 +507,24 @@ class TestNewDocCreation:
         assert "Backup" in filename or "backup" in filename.lower()
         assert folder in ("DPP", "RSV", "")
 
-    def test_suggest_filename_rejects_unknown_folder(self, updater):
-        """LLM-suggested folder not in docs_dir children -> falls back to root."""
-        # Create the expected child dirs so _allowed_subfolders finds them
-        (Path(updater.local_docs_dir) / "DPP").mkdir(parents=True, exist_ok=True)
-        (Path(updater.local_docs_dir) / "RSV").mkdir(parents=True, exist_ok=True)
-
+    def test_suggest_filename_accepts_any_folder(self, updater):
+        """Any single-name folder the LLM suggests is accepted."""
         updater.llm.generate = MagicMock(
-            return_value='{"filename": "Feature_X.md", "folder": "EVIL"}'
+            return_value='{"filename": "Feature_X.md", "folder": "NewArea"}'
         )
         filename, folder = updater._suggest_doc_filename("some topic")
         assert filename == "Feature_X.md"
-        assert folder == ""  # rejected, fell back to root
+        assert folder == "NewArea"  # accepted, new folder is fine
+
+    def test_suggest_filename_sanitises_folder(self, updater):
+        """Folder with path traversal or special chars is sanitised."""
+        updater.llm.generate = MagicMock(
+            return_value='{"filename": "Feature_Y.md", "folder": "../../etc"}'
+        )
+        filename, folder = updater._suggest_doc_filename("harmless")
+        assert ".." not in folder
+        assert "/" not in folder
+        assert "\\" not in folder
 
     def test_suggest_filename_strips_path_components(self, updater):
         """Filename with directory traversal components is sanitised."""
@@ -549,13 +552,14 @@ class TestNewDocCreation:
         assert written.exists()
         assert written.read_text() == "# Test Content\n"
 
-    def test_allowed_subfolders_reflects_disk(self, updater):
-        """_allowed_subfolders returns actual child directory names."""
-        (Path(updater.local_docs_dir) / "DPP").mkdir(parents=True, exist_ok=True)
-        (Path(updater.local_docs_dir) / "RSV").mkdir(parents=True, exist_ok=True)
-        allowed = updater._allowed_subfolders()
-        assert "DPP" in allowed
-        assert "RSV" in allowed
+    def test_save_new_document_creates_new_folder(self, updater):
+        """_save_new_document creates a brand-new subfolder if needed."""
+        doc_src, _ = updater._save_new_document(
+            "Feature_NewArea.md", "BrandNew", "# New Area\n"
+        )
+        written = Path(updater.local_docs_dir) / "BrandNew" / "Feature_NewArea.md"
+        assert written.exists()
+        assert written.read_text() == "# New Area\n"
 
     def test_pending_new_doc_cleared_after_create(self, updater):
         """After creating a new doc, _pending_new_doc should be None."""

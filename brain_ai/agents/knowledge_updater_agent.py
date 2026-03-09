@@ -159,16 +159,16 @@ Rules:
 - Use the format Feature_<Name>.md (e.g., Feature_BackupPolicy.md)
 - Use PascalCase with underscores between words
 - Keep it concise (2-4 words max)
-- If it's clearly a DPP feature (Data Protection Platform, DppWeb*), prefix with nothing (file goes in DPP/)
-- If it's clearly an RSV feature (Recovery Services Vault, BMS*, ProtectedItems), prefix with nothing (file goes in RSV/)
+- Choose the most appropriate folder for the topic (e.g. "DPP" for Data Protection
+  Platform features, "RSV" for Recovery Services Vault features, or any other
+  logical grouping). Use "" (empty) for cross-cutting topics that belong in the root.
+- Folder names should be short, PascalCase, and descriptive.
 
 Respond in EXACTLY this JSON format (no other text):
 {{
   "filename": "Feature_BackupRetry.md",
   "folder": "DPP"
 }}
-
-Valid folders: "DPP", "RSV", or "" (root agentKT folder for cross-cutting topics).
 """
 
 # Keywords that signal the user wants to create a new doc
@@ -490,24 +490,14 @@ class KnowledgeUpdaterAgent:
             log.error("New doc creation failed: %s", e, exc_info=True)
             return f"Failed to create the new document: **{e}**"
 
-    def _allowed_subfolders(self) -> set[str]:
-        """Return the set of existing sub-folder names inside docs_dir."""
-        try:
-            return {
-                p.name for p in self.local_docs_dir.iterdir() if p.is_dir()
-            }
-        except FileNotFoundError:
-            return set()
-
     def _suggest_doc_filename(self, topic: str) -> tuple[str, str]:
         """Use LLM to suggest a filename and folder for a new doc.
 
         Returns (filename, folder) e.g. ("Feature_BackupRetry.md", "DPP").
-        The folder is guaranteed to be either an existing child of docs_dir
-        or empty-string (root).
+        Any folder name is accepted as long as it is a safe single directory
+        name (no path separators, no '..').  The folder will be created
+        inside docs_dir if it doesn't exist yet.
         """
-        allowed = self._allowed_subfolders()  # e.g. {"DPP", "RSV"}
-
         prompt = FILENAME_PROMPT.format(topic=topic)
         raw = self.llm.generate(
             message=prompt,
@@ -526,13 +516,10 @@ class KnowledgeUpdaterAgent:
                 filename = re.sub(r'[^\w\-.]', '_', filename)
                 if not filename.endswith(".md"):
                     filename += ".md"
-                # Folder must be an existing child of docs_dir (or root)
-                if folder and folder not in allowed:
-                    log.warning(
-                        "LLM suggested folder '%s' not in allowed %s — defaulting to root.",
-                        folder, allowed,
-                    )
-                    folder = ""
+                # Sanitize folder — must be a single safe directory name
+                if folder:
+                    folder = Path(folder).name  # strip nested path components
+                    folder = re.sub(r'[^\w\-.]', '_', folder)
                 return filename, folder
         except Exception as e:
             log.warning("Failed to parse filename suggestion: %s", e)
