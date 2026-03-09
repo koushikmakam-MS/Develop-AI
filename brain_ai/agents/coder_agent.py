@@ -44,6 +44,18 @@ Rules:
 - If the user provides an error message or stack trace, match it to the code.
 - For errors with TaskIds or OperationIds, explain what operation type it maps to
   and trace the handler code for that operation.
+
+Visual Diagrams:
+Whenever you trace a code path, explain a call chain, or describe a multi-step flow,
+include a Mermaid diagram to visualize it. Use the appropriate diagram type:
+- `flowchart TD` for code execution paths, branching logic, and error handling flows
+- `sequenceDiagram` for call chains between classes/services (Controller → Orchestrator → Handler → DB)
+- `classDiagram` for class hierarchies and interface implementations
+- `graph LR` for component/module dependency diagrams
+
+Wrap diagrams in a ```mermaid code fence. Keep them focused (under 20 nodes).
+Always accompany the diagram with a text explanation — the diagram supplements,
+not replaces, the code walkthrough.
 """
 
 

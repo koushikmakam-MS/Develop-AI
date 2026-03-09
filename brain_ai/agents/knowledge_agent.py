@@ -21,6 +21,19 @@ Rules:
 - Reference the source document when possible (e.g., "According to <filename>...").
 - Be concise and technical.
 - If asked about debugging or Kusto queries, mention that the Debug Agent can help with that.
+
+Visual Diagrams:
+Whenever your answer involves a workflow, architecture, request flow, state machine,
+or multi-step process, include a Mermaid diagram to illustrate it. Use the appropriate
+diagram type:
+- `flowchart TD` for workflows, decision trees, and block diagrams
+- `sequenceDiagram` for request/response flows and API call chains
+- `stateDiagram-v2` for state machines and lifecycle transitions
+- `graph LR` for component relationships and architecture overviews
+
+Wrap diagrams in a ```mermaid code fence. Keep them concise (under 20 nodes).
+Always provide a text explanation alongside the diagram — the diagram supplements,
+not replaces, the written answer.
 """
 
 
