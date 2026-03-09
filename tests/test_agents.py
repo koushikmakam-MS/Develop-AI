@@ -577,3 +577,74 @@ class TestNewDocCreation:
         updater.handle("create doc", [])
         assert updater._pending_new_doc is None
         assert updater.pending_count == 1
+
+
+class TestToRepoPath:
+    """Verify _to_repo_path resolves files in repo clone AND local docs_dir."""
+
+    @pytest.fixture
+    def updater(self, tmp_path):
+        docs = tmp_path / "docs" / "agentKT"
+        docs.mkdir(parents=True)
+        repo = tmp_path / ".repo"
+        repo.mkdir()
+        cfg = {
+            "llm": {"model": "m", "endpoint": "e", "api_key": "k", "max_tokens": 4096},
+            "vectorstore": {"persist_directory": ".chromadb", "collection_name": "c",
+                            "embedding_model": "all-MiniLM-L6-v2", "chunk_size": 1000,
+                            "chunk_overlap": 200},
+            "paths": {"docs_dir": str(docs), "repo_clone_dir": str(repo)},
+            "azure_devops": {"repo_url": "https://x", "branch": "main",
+                             "sync_paths": ["docs/agentKT"], "pat": "fake"},
+            "protected_docs": [],
+        }
+        with patch("brain_ai.agents.knowledge_updater_agent.LLMClient"), \
+             patch("brain_ai.agents.knowledge_updater_agent.DocIndexer"), \
+             patch("brain_ai.agents.knowledge_updater_agent.AzureDevOpsPR"):
+            from brain_ai.agents.knowledge_updater_agent import KnowledgeUpdaterAgent
+            return KnowledgeUpdaterAgent(cfg)
+
+    def test_maps_file_in_repo_clone(self, updater):
+        """File found in .repo_cache/docs/agentKT/ maps correctly."""
+        repo_doc = updater.repo_clone_dir / "docs" / "agentKT" / "DPP" / "Feature_Jobs.md"
+        repo_doc.parent.mkdir(parents=True, exist_ok=True)
+        repo_doc.write_text("# Jobs", encoding="utf-8")
+
+        result = updater._to_repo_path("Feature_Jobs.md")
+        assert result == "docs/agentKT/DPP/Feature_Jobs.md"
+
+    def test_maps_sync_path_prefix(self, updater):
+        """doc_source that already starts with sync_path is returned as-is."""
+        result = updater._to_repo_path("docs/agentKT/DPP/Feature_X.md")
+        assert result == "docs/agentKT/DPP/Feature_X.md"
+
+    def test_maps_new_doc_from_local_docs_dir(self, updater):
+        """Newly created doc in local_docs_dir (not in repo clone) maps via sync_path."""
+        local_file = Path(updater.local_docs_dir) / "NewFolder" / "Feature_New.md"
+        local_file.parent.mkdir(parents=True, exist_ok=True)
+        local_file.write_text("# New", encoding="utf-8")
+
+        result = updater._to_repo_path("NewFolder/Feature_New.md")
+        assert result == "docs/agentKT/NewFolder/Feature_New.md"
+
+    def test_maps_new_doc_root_from_local_docs_dir(self, updater):
+        """New doc at the root of local_docs_dir maps correctly."""
+        local_file = Path(updater.local_docs_dir) / "Feature_Root.md"
+        local_file.write_text("# Root", encoding="utf-8")
+
+        result = updater._to_repo_path("Feature_Root.md")
+        assert result == "docs/agentKT/Feature_Root.md"
+
+    def test_maps_by_filename_search_in_local_docs(self, updater):
+        """Even with only the filename, finds the file via rglob in local docs."""
+        local_file = Path(updater.local_docs_dir) / "Deep" / "Sub" / "Feature_Deep.md"
+        local_file.parent.mkdir(parents=True, exist_ok=True)
+        local_file.write_text("# Deep", encoding="utf-8")
+
+        result = updater._to_repo_path("Feature_Deep.md")
+        assert result == "docs/agentKT/Deep/Sub/Feature_Deep.md"
+
+    def test_returns_none_for_nonexistent(self, updater):
+        """Completely unknown file returns None."""
+        result = updater._to_repo_path("Feature_DoesNotExist.md")
+        assert result is None

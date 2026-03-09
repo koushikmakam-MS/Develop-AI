@@ -787,13 +787,24 @@ class KnowledgeUpdaterAgent:
         return None
 
     def _to_repo_path(self, doc_source: str) -> Optional[str]:
-        """Map a local doc source path to the corresponding repo path."""
+        """Map a local doc source path to the corresponding repo path.
+
+        Lookup order:
+        1. doc_source already starts with a sync_path -> use as-is.
+        2. Search the repo clone for a file with the same name.
+        3. doc_source exists directly under repo_clone_dir.
+        4. Locate the file inside local_docs_dir and construct the repo path
+           from the first sync_path + its relative position (handles newly
+           created docs that aren't in the repo clone yet).
+        """
         doc_path = Path(doc_source)
 
+        # 1. Already a full sync-relative path
         for sp in self.sync_paths:
             if doc_source.replace("\\", "/").startswith(sp):
                 return doc_source.replace("\\", "/")
 
+        # 2. Search the repo clone by filename
         fname = doc_path.name
         for sp in self.sync_paths:
             src = self.repo_clone_dir / sp
@@ -803,9 +814,48 @@ class KnowledgeUpdaterAgent:
                     log.info("Mapped '%s' -> repo path '%s'", doc_source, repo_path)
                     return repo_path
 
+        # 3. Direct path under repo clone
         candidate = self.repo_clone_dir / doc_source
         if candidate.is_file():
             return doc_source.replace("\\", "/")
+
+        # 4. File exists in local_docs_dir (newly created doc, not yet in repo)
+        #    -> build repo path as sync_path / relative_to_docs_dir
+        local_candidates = [
+            self.local_docs_dir / doc_source,
+        ]
+        # Also try just the filename in case doc_source has extra path parts
+        parts = doc_path.parts
+        for i in range(len(parts)):
+            local_candidates.append(self.local_docs_dir / Path(*parts[i:]))
+
+        for lc in local_candidates:
+            if lc.is_file():
+                try:
+                    rel = lc.relative_to(self.local_docs_dir)
+                except ValueError:
+                    continue
+                base = self.sync_paths[0] if self.sync_paths else "docs/agentKT"
+                repo_path = f"{base}/{rel}".replace("\\", "/")
+                log.info(
+                    "Mapped '%s' -> repo path '%s' (from local docs_dir)",
+                    doc_source, repo_path,
+                )
+                return repo_path
+
+        # Last resort: search local_docs_dir by filename
+        for f in self.local_docs_dir.rglob(fname):
+            try:
+                rel = f.relative_to(self.local_docs_dir)
+            except ValueError:
+                continue
+            base = self.sync_paths[0] if self.sync_paths else "docs/agentKT"
+            repo_path = f"{base}/{rel}".replace("\\", "/")
+            log.info(
+                "Mapped '%s' -> repo path '%s' (by name in local docs_dir)",
+                doc_source, repo_path,
+            )
+            return repo_path
 
         log.warning("Could not map '%s' to a repo path.", doc_source)
         return None
