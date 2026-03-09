@@ -187,16 +187,29 @@ def _handle_command(command: str, brain: BrainAgent) -> bool:
 
 def run_chat(config_path: Optional[str] = None):
     """Main CLI chat loop."""
-    # Setup logging
-    logging.basicConfig(
-        level=logging.INFO,
-        format="%(asctime)s [%(name)s] %(levelname)s: %(message)s",
-        handlers=[logging.FileHandler("BCDR_devai.log"), logging.StreamHandler()],
+    # Setup logging — file gets everything, console only gets warnings/errors
+    root_logger = logging.getLogger()
+    root_logger.setLevel(logging.DEBUG)
+
+    # File handler: verbose (INFO+)
+    file_handler = logging.FileHandler("BCDR_devai.log", encoding="utf-8")
+    file_handler.setLevel(logging.INFO)
+    file_handler.setFormatter(
+        logging.Formatter("%(asctime)s [%(name)s] %(levelname)s: %(message)s")
     )
-    # Quiet down noisy loggers
-    logging.getLogger("chromadb").setLevel(logging.WARNING)
-    logging.getLogger("httpx").setLevel(logging.WARNING)
-    logging.getLogger("anthropic").setLevel(logging.WARNING)
+    root_logger.addHandler(file_handler)
+
+    # Console handler: quiet (WARNING+ only, so logs don't flood the chat)
+    console_handler = logging.StreamHandler()
+    console_handler.setLevel(logging.WARNING)
+    console_handler.setFormatter(
+        logging.Formatter("%(levelname)s: %(message)s")
+    )
+    root_logger.addHandler(console_handler)
+
+    # Quiet down noisy third-party loggers
+    for noisy in ("chromadb", "httpx", "anthropic", "urllib3", "openai"):
+        logging.getLogger(noisy).setLevel(logging.WARNING)
 
     console.print(Markdown(WELCOME_TEXT))
 

@@ -396,6 +396,9 @@ class TestNewDocCreation:
     def updater_cfg(self, tmp_path):
         docs = tmp_path / "docs" / "agentKT"
         docs.mkdir(parents=True)
+        # Create the expected sub-folders so _allowed_subfolders() recognises them
+        (docs / "DPP").mkdir()
+        (docs / "RSV").mkdir()
         return {
             "llm": {"model": "m", "endpoint": "e", "api_key": "k", "max_tokens": 4096},
             "vectorstore": {"persist_directory": ".chromadb", "collection_name": "c",
@@ -506,6 +509,53 @@ class TestNewDocCreation:
         assert filename.endswith(".md")
         assert "Backup" in filename or "backup" in filename.lower()
         assert folder in ("DPP", "RSV", "")
+
+    def test_suggest_filename_rejects_unknown_folder(self, updater):
+        """LLM-suggested folder not in docs_dir children -> falls back to root."""
+        # Create the expected child dirs so _allowed_subfolders finds them
+        (Path(updater.local_docs_dir) / "DPP").mkdir(parents=True, exist_ok=True)
+        (Path(updater.local_docs_dir) / "RSV").mkdir(parents=True, exist_ok=True)
+
+        updater.llm.generate = MagicMock(
+            return_value='{"filename": "Feature_X.md", "folder": "EVIL"}'
+        )
+        filename, folder = updater._suggest_doc_filename("some topic")
+        assert filename == "Feature_X.md"
+        assert folder == ""  # rejected, fell back to root
+
+    def test_suggest_filename_strips_path_components(self, updater):
+        """Filename with directory traversal components is sanitised."""
+        updater.llm.generate = MagicMock(
+            return_value='{"filename": "../../etc/passwd.md", "folder": ""}'
+        )
+        filename, folder = updater._suggest_doc_filename("harmless topic")
+        # Path(name).name strips directory parts -> "passwd.md"
+        assert ".." not in filename
+        assert "/" not in filename
+        assert "\\" not in filename
+        assert filename.endswith(".md")
+
+    def test_save_new_document_rejects_path_traversal(self, updater):
+        """_save_new_document refuses to write outside docs_dir."""
+        with pytest.raises(ValueError, match="Refusing to write outside docs_dir"):
+            updater._save_new_document("evil.md", "../../..", "bad content")
+
+    def test_save_new_document_writes_in_allowed_child(self, updater):
+        """_save_new_document succeeds for a valid child folder."""
+        doc_path, _ = updater._save_new_document(
+            "Feature_Test.md", "DPP", "# Test Content\n"
+        )
+        written = Path(updater.local_docs_dir) / "DPP" / "Feature_Test.md"
+        assert written.exists()
+        assert written.read_text() == "# Test Content\n"
+
+    def test_allowed_subfolders_reflects_disk(self, updater):
+        """_allowed_subfolders returns actual child directory names."""
+        (Path(updater.local_docs_dir) / "DPP").mkdir(parents=True, exist_ok=True)
+        (Path(updater.local_docs_dir) / "RSV").mkdir(parents=True, exist_ok=True)
+        allowed = updater._allowed_subfolders()
+        assert "DPP" in allowed
+        assert "RSV" in allowed
 
     def test_pending_new_doc_cleared_after_create(self, updater):
         """After creating a new doc, _pending_new_doc should be None."""

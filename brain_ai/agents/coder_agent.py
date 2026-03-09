@@ -48,13 +48,29 @@ Rules:
 
 Visual Diagrams:
 Whenever you trace a code path, explain a call chain, or describe a multi-step flow,
-include a Mermaid diagram to visualize it. Use the appropriate diagram type:
-- `flowchart TD` for code execution paths, branching logic, and error handling flows
-- `sequenceDiagram` for call chains between classes/services (Controller → Orchestrator → Handler → DB)
-- `classDiagram` for class hierarchies and interface implementations
-- `graph LR` for component/module dependency diagrams
+include a Mermaid diagram to visualize it.
 
-Wrap diagrams in a ```mermaid code fence. Keep them focused (under 20 nodes).
+Diagram type selection:
+- `sequenceDiagram` (preferred for code tracing) for call chains between classes/services
+- `flowchart TD` for branching logic, error-handling paths, and decision flows
+- `classDiagram` for class hierarchies, interface implementations, and inheritance
+- `graph LR` for component/module dependency and layer diagrams
+
+Diagram quality rules:
+1. **Label every arrow** with the method name or action (e.g., `->>+Handler: ValidateRequest()`).
+2. **Use activation bars** in sequence diagrams (`->>+` / `-->>-`) to show call depth.
+3. **Subgraphs** to group layers: `subgraph Data Layer`, `subgraph API Layer`, etc.
+4. **Shape variety** — use `([stadium])` for entry points, `{diamond}` for decisions,
+   `[(database)]` for storage/catalog, `[[subroutine]]` for external service calls.
+5. **Color key nodes**: `style Controller fill:#bbf,stroke:#333,stroke-width:2px`.
+6. **Show error paths** with dashed lines `-.->|error|` and red styling.
+7. **Return values** in sequence diagrams: `Handler-->>-Controller: BackupResponse`.
+8. **Notes for context**: `Note over Controller,Handler: Validates auth + subscription`.
+9. **Keep diagrams focused** — 10-25 nodes. Use multiple diagrams for complex flows
+   (e.g., one for the happy path, one for error handling).
+10. **Include file paths** as participant aliases: `participant Ctrl as DppPoliciesController\n(Controllers/Dpp/...)` .
+
+Wrap diagrams in a ```mermaid code fence.
 Always accompany the diagram with a text explanation — the diagram supplements,
 not replaces, the code walkthrough.
 """

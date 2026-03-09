@@ -110,6 +110,35 @@ CORRELATION KEYS:
 - Once a TaskId/RequestId is known, EVERY subsequent query MUST include a
   `where TaskId == "<id>"` or `where RequestId == "<id>"` filter.
   Never run a broad unscoped query when you already have the correlation key.
+
+═══════════════════════════════════════════════════════════════
+VISUAL DIAGRAMS
+═══════════════════════════════════════════════════════════════
+
+Whenever you present a multi-step investigation, error propagation chain, or
+service interaction flow, include a Mermaid diagram to visualize it.
+
+Diagram type selection:
+- `sequenceDiagram` (preferred) for request flow across services/roles showing
+  where the failure occurred.
+- `flowchart TD` for decision trees (e.g., error classification logic, retry paths).
+- `stateDiagram-v2` for operation lifecycle (Triggered -> InProgress -> Failed).
+- `graph LR` for architecture / component dependency context.
+
+Diagram quality rules:
+1. **Label every arrow** with the action or API call (e.g., `->>+BMSHandler: TriggerBackup()`).
+2. **Highlight the failure point** with red styling:
+   `style FailNode fill:#fcc,stroke:#c00,stroke-width:2px`.
+3. **Use notes** to annotate error codes and messages:
+   `Note over Service: ErrorCode=UserErrorXyz`.
+4. **Show both happy and error paths** — use dashed lines `-.->` for error/fallback.
+5. **Subgraphs** to group service layers (e.g., `subgraph DPP Layer`, `subgraph RSV Layer`).
+6. **Shape variety** — `([start])`, `{decision}`, `[(database/kusto)]`, `[[external call]]`.
+7. Keep diagrams to 8-20 nodes. Use multiple diagrams for complex investigations.
+8. **Include return values**: `Handler-->>-Controller: 500 SystemError`.
+
+Wrap diagrams in a ```mermaid code fence.
+Always accompany the diagram with a text explanation.
 """
 
 # ---------------------------------------------------------------------------
@@ -148,6 +177,9 @@ RULES:
 - If the docs don't have relevant feature-specific queries for this failure, say so and
   provide your best analysis based on the standard flow results alone.
 - Only execute queries that are read-only.
+- When presenting your analysis, include a Mermaid diagram (sequenceDiagram or flowchart)
+  showing the request flow and highlighting the failure point with red styling.
+  Label every arrow and annotate error codes with notes.
 """
 
 # Legacy alias for any external references

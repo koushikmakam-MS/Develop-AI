@@ -490,11 +490,24 @@ class KnowledgeUpdaterAgent:
             log.error("New doc creation failed: %s", e, exc_info=True)
             return f"Failed to create the new document: **{e}**"
 
+    def _allowed_subfolders(self) -> set[str]:
+        """Return the set of existing sub-folder names inside docs_dir."""
+        try:
+            return {
+                p.name for p in self.local_docs_dir.iterdir() if p.is_dir()
+            }
+        except FileNotFoundError:
+            return set()
+
     def _suggest_doc_filename(self, topic: str) -> tuple[str, str]:
         """Use LLM to suggest a filename and folder for a new doc.
 
         Returns (filename, folder) e.g. ("Feature_BackupRetry.md", "DPP").
+        The folder is guaranteed to be either an existing child of docs_dir
+        or empty-string (root).
         """
+        allowed = self._allowed_subfolders()  # e.g. {"DPP", "RSV"}
+
         prompt = FILENAME_PROMPT.format(topic=topic)
         raw = self.llm.generate(
             message=prompt,
@@ -508,11 +521,17 @@ class KnowledgeUpdaterAgent:
                 result = json.loads(json_match.group())
                 filename = result.get("filename", "Feature_NewTopic.md")
                 folder = result.get("folder", "")
-                # Sanitize
+                # Sanitize filename — strip path separators & special chars
+                filename = Path(filename).name  # drop any directory component
                 filename = re.sub(r'[^\w\-.]', '_', filename)
                 if not filename.endswith(".md"):
                     filename += ".md"
-                if folder not in ("DPP", "RSV", ""):
+                # Folder must be an existing child of docs_dir (or root)
+                if folder and folder not in allowed:
+                    log.warning(
+                        "LLM suggested folder '%s' not in allowed %s — defaulting to root.",
+                        folder, allowed,
+                    )
                     folder = ""
                 return filename, folder
         except Exception as e:
@@ -525,15 +544,25 @@ class KnowledgeUpdaterAgent:
     def _save_new_document(
         self, filename: str, folder: str, content: str
     ) -> tuple[str, str]:
-        """Write a new doc file locally and return (doc_source, repo_path)."""
+        """Write a new doc file locally and return (doc_source, repo_path).
+
+        Raises ValueError if the resolved path escapes docs_dir.
+        """
         # Build local path
         if folder:
             local_dir = self.local_docs_dir / folder
         else:
             local_dir = self.local_docs_dir
-        local_dir.mkdir(parents=True, exist_ok=True)
 
-        local_path = local_dir / filename
+        local_path = (local_dir / filename).resolve()
+
+        # Safety check: ensure the resolved path is inside docs_dir
+        if not str(local_path).startswith(str(self.local_docs_dir.resolve())):
+            raise ValueError(
+                f"Refusing to write outside docs_dir: {local_path}"
+            )
+
+        local_dir.mkdir(parents=True, exist_ok=True)
         local_path.write_text(content, encoding="utf-8")
         log.info("Saved new document: %s", local_path)
 

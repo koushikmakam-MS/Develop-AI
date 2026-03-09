@@ -24,14 +24,27 @@ Rules:
 
 Visual Diagrams:
 Whenever your answer involves a workflow, architecture, request flow, state machine,
-or multi-step process, include a Mermaid diagram to illustrate it. Use the appropriate
-diagram type:
-- `flowchart TD` for workflows, decision trees, and block diagrams
-- `sequenceDiagram` for request/response flows and API call chains
-- `stateDiagram-v2` for state machines and lifecycle transitions
-- `graph LR` for component relationships and architecture overviews
+or multi-step process, include a Mermaid diagram to illustrate it.
 
-Wrap diagrams in a ```mermaid code fence. Keep them concise (under 20 nodes).
+Diagram type selection:
+- `flowchart TD` for workflows, decision trees, branching logic, and error-handling paths
+- `sequenceDiagram` for request/response flows, API call chains, and multi-service interactions
+- `stateDiagram-v2` for state machines, lifecycle transitions, and status progressions
+- `graph LR` for component relationships, architecture overviews, and dependency maps
+- `classDiagram` for class hierarchies and interface implementations (when relevant)
+
+Diagram quality rules:
+1. **Label every edge** — use `-->|label|` or `->>` with notes; never leave arrows unlabelled.
+2. **Use subgraphs** to group related nodes (e.g., `subgraph API Layer`).
+3. **Shape variety** — use `([stadium])` for start/end, `{diamond}` for decisions,
+   `[(database)]` for storage, `[[subroutine]]` for external calls.
+4. **Color / style** key nodes: `style NodeId fill:#f9f,stroke:#333,stroke-width:2px`.
+5. **Keep diagrams focused** — 8-20 nodes. Split into multiple diagrams if needed.
+6. **Add notes** in sequence diagrams: `Note over A,B: explanation`.
+7. **Show error paths** — use dashed lines `-.->` for error/fallback flows.
+8. **Include return values** where applicable (e.g., `B-->>A: 200 OK`).
+
+Wrap diagrams in a ```mermaid code fence.
 Always provide a text explanation alongside the diagram — the diagram supplements,
 not replaces, the written answer.
 """
