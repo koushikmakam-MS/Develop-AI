@@ -25,6 +25,9 @@ log = logging.getLogger(__name__)
 
 console = Console()
 
+# Module-level reference so /logs command can toggle verbosity
+_console_handler: Optional[logging.StreamHandler] = None
+
 AGENT_COLORS = {
     "knowledge": "cyan",
     "debug": "yellow",
@@ -49,6 +52,7 @@ Welcome! I can help you with:
 - `/kusto`   - Check Kusto MCP server status
 - `/code`    - Check code index status
 - `/pending` - Show staged doc corrections
+- `/logs`    - Toggle verbose logging on/off (for testing)
 - `/quit`    - Exit
 
 Type your question below to get started!
@@ -182,6 +186,23 @@ def _handle_command(command: str, brain: BrainAgent) -> bool:
             console.print("[dim]No pending corrections.[/dim]")
         return True
 
+    if cmd == "/logs":
+        if _console_handler is None:
+            console.print("[red]Logging not initialised yet.[/red]")
+            return True
+        if _console_handler.level <= logging.DEBUG:
+            # Currently verbose -> switch to quiet
+            _console_handler.setLevel(logging.WARNING)
+            console.print("[dim]Verbose logging OFF — only warnings/errors shown in chat.[/dim]")
+        else:
+            # Currently quiet -> switch to verbose
+            _console_handler.setLevel(logging.DEBUG)
+            console.print(
+                "[green]Verbose logging ON — all logs will appear in chat.[/green]\n"
+                "[dim]Use /logs again to turn off.[/dim]"
+            )
+        return True
+
     return False
 
 
@@ -200,12 +221,13 @@ def run_chat(config_path: Optional[str] = None):
     root_logger.addHandler(file_handler)
 
     # Console handler: quiet (WARNING+ only, so logs don't flood the chat)
-    console_handler = logging.StreamHandler()
-    console_handler.setLevel(logging.WARNING)
-    console_handler.setFormatter(
-        logging.Formatter("%(levelname)s: %(message)s")
+    global _console_handler
+    _console_handler = logging.StreamHandler()
+    _console_handler.setLevel(logging.WARNING)
+    _console_handler.setFormatter(
+        logging.Formatter("%(asctime)s [%(name)s] %(levelname)s: %(message)s")
     )
-    root_logger.addHandler(console_handler)
+    root_logger.addHandler(_console_handler)
 
     # Quiet down noisy third-party loggers
     for noisy in ("chromadb", "httpx", "anthropic", "urllib3", "openai"):
