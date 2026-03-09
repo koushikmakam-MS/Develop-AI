@@ -428,6 +428,45 @@ class TestNewDocCreation:
         assert "create doc" in result.lower() or "new document" in result.lower()
         assert updater._pending_new_doc is not None
         assert updater._pending_new_doc["topic"] == "retry circuit breaker"
+        # New format: corrections is a list
+        assert updater._pending_new_doc["corrections"] == [
+            "The new retry feature uses circuit breaker pattern"
+        ]
+
+    def test_accumulates_corrections_for_new_doc(self, updater):
+        """Subsequent messages should accumulate into _pending_new_doc.corrections."""
+        updater.indexer.search = MagicMock(return_value=[])
+
+        # First message — creates the offer
+        updater._extract_correction = MagicMock(return_value={
+            "is_correction": True,
+            "correction": "Billing uses consumption-based model",
+            "search_query": "billing management",
+        })
+        result1 = updater.handle("Billing uses consumption-based model", [])
+        assert "create doc" in result1.lower()
+        assert len(updater._pending_new_doc["corrections"]) == 1
+
+        # Second message — accumulates
+        updater._extract_correction = MagicMock(return_value={
+            "is_correction": True,
+            "correction": "It also supports reserved instances and pre-pay",
+            "search_query": "billing reserved instances",
+        })
+        result2 = updater.handle("It also supports reserved instances and pre-pay", [])
+        assert "2 pieces" in result2.lower()
+        assert len(updater._pending_new_doc["corrections"]) == 2
+        assert "reserved instances" in updater._pending_new_doc["corrections"][1]
+
+        # Third message — accumulates more
+        updater._extract_correction = MagicMock(return_value={
+            "is_correction": True,
+            "correction": "Cost alerts are sent via Azure Monitor",
+            "search_query": "billing cost alerts",
+        })
+        result3 = updater.handle("Cost alerts are sent via Azure Monitor", [])
+        assert "3 pieces" in result3.lower()
+        assert len(updater._pending_new_doc["corrections"]) == 3
 
     def test_only_protected_hits_offers_new_doc(self, updater):
         """When all hits are protected, the agent should offer to create a new doc."""
@@ -447,7 +486,7 @@ class TestNewDocCreation:
         assert updater._pending_new_doc is not None
 
     def test_is_create_doc_request_true(self, updater):
-        updater._pending_new_doc = {"topic": "x", "correction": "y", "search_query": "z"}
+        updater._pending_new_doc = {"topic": "x", "corrections": ["y"], "search_query": "z"}
         assert updater._is_create_doc_request("create doc")
         assert updater._is_create_doc_request("Yes, create a doc please")
         assert updater._is_create_doc_request("new doc")
@@ -460,7 +499,7 @@ class TestNewDocCreation:
         """Full flow: no hit → offer → user says 'create doc' → file created."""
         updater._pending_new_doc = {
             "topic": "retry circuit breaker",
-            "correction": "The new retry feature uses circuit breaker pattern with 3 retries",
+            "corrections": ["The new retry feature uses circuit breaker pattern with 3 retries"],
             "search_query": "retry circuit breaker",
         }
         updater.llm.generate = MagicMock(side_effect=[
@@ -487,7 +526,7 @@ class TestNewDocCreation:
         """When folder is empty, doc is placed in the root docs dir."""
         updater._pending_new_doc = {
             "topic": "cross cutting concern",
-            "correction": "General info about error handling patterns",
+            "corrections": ["General info about error handling patterns"],
             "search_query": "error handling patterns",
         }
         updater.llm.generate = MagicMock(side_effect=[
@@ -501,6 +540,33 @@ class TestNewDocCreation:
 
         doc_path = Path(updater.local_docs_dir) / "Feature_ErrorHandling.md"
         assert doc_path.exists()
+
+    def test_create_doc_uses_all_accumulated_corrections(self, updater, tmp_path):
+        """When multiple corrections are accumulated, all are sent to the LLM."""
+        updater._pending_new_doc = {
+            "topic": "billing management",
+            "corrections": [
+                "Billing uses consumption-based model",
+                "It supports reserved instances and pre-pay",
+                "Cost alerts are sent via Azure Monitor",
+            ],
+            "search_query": "billing management",
+        }
+        updater.llm.generate = MagicMock(side_effect=[
+            "# Feature: Billing Management\n\nConsumption + reserved instances.\n",
+            '{"filename": "Feature_BillingManagement.md", "folder": "DPP"}',
+        ])
+        updater.indexer.index_file = MagicMock(return_value=3)
+
+        result = updater.handle("create doc", [])
+        assert "new document created" in result.lower()
+
+        # Verify that all 3 corrections were sent to the LLM in the prompt
+        llm_call_args = updater.llm.generate.call_args_list[0]
+        prompt_text = llm_call_args.kwargs.get("message", llm_call_args[0][0] if llm_call_args[0] else "")
+        assert "consumption-based model" in prompt_text
+        assert "reserved instances" in prompt_text
+        assert "Cost alerts" in prompt_text
 
     def test_suggest_filename_fallback(self, updater):
         """If LLM returns garbage, fallback produces a valid filename."""
@@ -568,7 +634,7 @@ class TestNewDocCreation:
         """After creating a new doc, _pending_new_doc should be None."""
         updater._pending_new_doc = {
             "topic": "test topic",
-            "correction": "test content",
+            "corrections": ["test content"],
             "search_query": "test",
         }
         updater.llm.generate = MagicMock(side_effect=[

@@ -167,7 +167,7 @@ class TestRouting:
         brain = self._make_brain()
         mock_updater = MagicMock()
         mock_updater.pending_count = 0
-        mock_updater._pending_new_doc = {"topic": "test", "correction": "c", "search_query": "s"}
+        mock_updater._pending_new_doc = {"topic": "test", "corrections": ["c"], "search_query": "s"}
         brain._agents["knowledge_updater"] = mock_updater
         brain._agents["knowledge"] = MagicMock()
         brain.llm.generate = MagicMock(return_value="ROUTE:knowledge_updater")

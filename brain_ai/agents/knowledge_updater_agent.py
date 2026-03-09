@@ -101,8 +101,10 @@ Return ONLY the summary text, nothing else."""
 NEW_DOC_PROMPT = """You are creating a NEW documentation file for the Azure Backup Management project.
 
 The user has provided information about a topic that has no existing documentation.
+The information below was collected across one or more messages from the user.
+You MUST incorporate ALL of this information into the document — do NOT omit anything.
 
-## User's Information
+## User's Information (collected from all user messages)
 {user_info}
 
 ## Conversation Context
@@ -222,8 +224,10 @@ class KnowledgeUpdaterAgent:
         self._pending_corrections: List[Dict[str, str]] = []
 
         # Pending new-doc creation context (set when no matching doc found)
-        # {topic, correction, search_query}
-        self._pending_new_doc: Optional[Dict[str, str]] = None
+        # {topic, corrections: List[str], search_query}
+        # 'corrections' accumulates across multiple user messages so the
+        # final doc includes ALL information the user provided.
+        self._pending_new_doc: Optional[Dict[str, Any]] = None
 
         log.info("KnowledgeUpdaterAgent ready (protected_docs=%s).", self.protected_docs)
 
@@ -312,9 +316,26 @@ class KnowledgeUpdaterAgent:
 
             # No editable doc found — offer to create a new one
             if not editable_hits:
+                if self._pending_new_doc:
+                    # Accumulate additional info into the existing offer
+                    self._pending_new_doc["corrections"].append(correction)
+                    log.info(
+                        "Appended correction #%d to pending new-doc for '%s'.",
+                        len(self._pending_new_doc["corrections"]),
+                        self._pending_new_doc["topic"],
+                    )
+                    total = len(self._pending_new_doc["corrections"])
+                    return (
+                        f"Got it — I've added this information to the pending new document "
+                        f"(now **{total} pieces** of input collected).\n\n"
+                        f"**Topic:** {self._pending_new_doc['topic']}\n\n"
+                        f"You can keep adding more detail, or say "
+                        f'**"create doc"** when you\'re ready.'
+                    )
+
                 self._pending_new_doc = {
                     "topic": search_query,
-                    "correction": correction,
+                    "corrections": [correction],
                     "search_query": search_query,
                 }
                 log.info("No editable doc found for '%s' — offering new doc creation.", search_query)
@@ -419,15 +440,21 @@ class KnowledgeUpdaterAgent:
 
         try:
             topic = self._pending_new_doc["topic"]
-            correction = self._pending_new_doc["correction"]
+            # Join ALL accumulated corrections so the LLM sees everything
+            corrections_list = self._pending_new_doc.get("corrections", [])
+            correction = "\n\n".join(corrections_list) if corrections_list else ""
+            log.info(
+                "Creating new doc for '%s' with %d accumulated corrections.",
+                topic, len(corrections_list),
+            )
 
-            # Build history context
+            # Build history context (generous limit per message)
             history_context = ""
             if history:
                 recent = history[-10:]
                 for msg in recent:
                     role = msg.get("role", "unknown")
-                    content = msg.get("content", "")[:600]
+                    content = msg.get("content", "")[:2000]
                     history_context += f"**{role}:** {content}\n\n"
 
             # Step 1: Generate the doc content
