@@ -17,8 +17,10 @@ env/
 .chromadb/
 .repo_cache/
 docs/agentKT/
+*.log
 BCDR_devai.log
 BCDR_devai_bot.log
+bcrd_devai.log
 brainai.log
 brainai_bot.log
 daily_sync.log

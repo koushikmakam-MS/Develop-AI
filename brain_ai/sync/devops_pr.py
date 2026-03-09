@@ -9,6 +9,7 @@ Used by the Knowledge Updater Agent to propose doc corrections.
 
 import json
 import logging
+import re
 import base64
 import urllib.request
 import urllib.error
@@ -261,7 +262,8 @@ class AzureDevOpsPR:
         """
         # Generate a unique branch name
         timestamp = datetime.now(timezone.utc).strftime("%Y%m%d-%H%M%S")
-        safe_summary = correction_summary[:40].replace(" ", "-").replace("/", "-").lower()
+        safe_summary = re.sub(r'[^a-z0-9_-]', '-', correction_summary[:40].lower()).strip('-')
+        safe_summary = re.sub(r'-{2,}', '-', safe_summary)  # collapse multiple dashes
         branch_name = f"BCDR-devai/doc-correction/{safe_summary}-{timestamp}"
 
         log.info("Creating correction PR: branch=%s, file=%s", branch_name, file_path)
@@ -309,7 +311,8 @@ class AzureDevOpsPR:
             Dict with pr_id, web_url, branch_name, files_changed, etc.
         """
         timestamp = datetime.now(timezone.utc).strftime("%Y%m%d-%H%M%S")
-        safe_summary = overall_summary[:40].replace(" ", "-").replace("/", "-").lower()
+        safe_summary = re.sub(r'[^a-z0-9_-]', '-', overall_summary[:40].lower()).strip('-')
+        safe_summary = re.sub(r'-{2,}', '-', safe_summary)  # collapse multiple dashes
         branch_name = f"BCDR-devai/doc-corrections/{safe_summary}-{timestamp}"
 
         log.info(
