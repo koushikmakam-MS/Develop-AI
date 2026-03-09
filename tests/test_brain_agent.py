@@ -137,6 +137,47 @@ class TestRouting:
         brain.llm.generate = MagicMock(side_effect=RuntimeError("boom"))
         assert brain._route("hello") == "knowledge"
 
+    @patch("brain_ai.agents.brain_agent.KnowledgeAgent")
+    @patch("brain_ai.agents.brain_agent.DebugAgent")
+    @patch("brain_ai.agents.brain_agent.CoderAgent")
+    @patch("brain_ai.agents.brain_agent.KnowledgeUpdaterAgent")
+    def test_route_injects_pending_corrections_state(self, *_mocks):
+        """When there are pending corrections, the router system prompt includes state info."""
+        brain = self._make_brain()
+        mock_updater = MagicMock()
+        mock_updater.pending_count = 2
+        mock_updater._pending_new_doc = None
+        brain._agents["knowledge_updater"] = mock_updater
+        brain._agents["knowledge"] = MagicMock()
+        brain.llm.generate = MagicMock(return_value="ROUTE:knowledge_updater")
+
+        brain._route("submit")
+
+        # Inspect the system prompt passed to the LLM
+        call_kwargs = brain.llm.generate.call_args
+        system_prompt = call_kwargs.kwargs.get("system") or call_kwargs[1].get("system", "")
+        assert "2 pending correction(s)" in system_prompt
+
+    @patch("brain_ai.agents.brain_agent.KnowledgeAgent")
+    @patch("brain_ai.agents.brain_agent.DebugAgent")
+    @patch("brain_ai.agents.brain_agent.CoderAgent")
+    @patch("brain_ai.agents.brain_agent.KnowledgeUpdaterAgent")
+    def test_route_injects_pending_new_doc_state(self, *_mocks):
+        """When there's a pending new-doc offer, the router sees that state."""
+        brain = self._make_brain()
+        mock_updater = MagicMock()
+        mock_updater.pending_count = 0
+        mock_updater._pending_new_doc = {"topic": "test", "correction": "c", "search_query": "s"}
+        brain._agents["knowledge_updater"] = mock_updater
+        brain._agents["knowledge"] = MagicMock()
+        brain.llm.generate = MagicMock(return_value="ROUTE:knowledge_updater")
+
+        brain._route("create doc")
+
+        call_kwargs = brain.llm.generate.call_args
+        system_prompt = call_kwargs.kwargs.get("system") or call_kwargs[1].get("system", "")
+        assert "offered to create a new document" in system_prompt
+
 
 # ── Knowledge → Coder fallback ───────────────────────────────────────────
 

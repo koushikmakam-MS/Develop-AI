@@ -28,16 +28,27 @@ ROUTER_SYSTEM_PROMPT = """You are the Brain Agent, a routing orchestrator for th
 Your ONLY job is to classify the user's message and decide which specialized agent should handle it.
 
 Available agents:
-- "knowledge": For questions about the project, architecture, features, processes, documentation, how-to, configuration, design, etc.
-- "debug": For debugging errors, troubleshooting issues, running Kusto/KQL queries, investigating failures, analyzing logs, or any request that involves diagnosing a problem. Also handles ANY follow-up to a debug conversation (e.g. providing a time range, answering a clarifying question from the debug agent, saying "go ahead", "yes", "30 days", etc.).
+- "knowledge": For questions about the project, architecture, features, processes, documentation, how-to, configuration, design, etc.  The user is ASKING for information; they are not providing corrections or managing docs.
+- "debug": For debugging errors, troubleshooting issues, running Kusto/KQL queries, investigating failures, analyzing logs, or any request that involves diagnosing a problem.  Also handles ANY follow-up to a debug conversation (e.g. providing a time range, answering a clarifying question from the debug agent, saying "go ahead", "yes", "30 days", etc.).
 - "coder": For tracing code paths, understanding source code flows, finding which code handles a specific operation or error, reviewing how a feature is implemented in the BMS service codebase, identifying root causes at the code level, explaining class/method call chains, or any question about the actual source code (C#, Python, etc.).
-- "knowledge_updater": For when the user CORRECTS information, says something is wrong/incorrect/outdated in the docs, provides updated facts, or explicitly asks to update/fix the documentation. Key signals: "that's wrong", "actually it works like", "the doc is incorrect", "please update", "this should say", "correct the doc", "fix the documentation". This agent updates the doc and creates a Pull Request.
+- "knowledge_updater": For ALL documentation management operations.  This includes:
+  • Correcting information ("that's wrong", "actually it works like", "the doc is incorrect")
+  • Updating / fixing docs ("please update", "fix the documentation", "this should say")
+  • Creating new docs ("create doc", "new doc", "draft a doc", "save doc", "add doc")
+  • Submitting changes ("submit", "agree", "create pr", "push it", "lgtm", "ship it")
+  • Discarding changes ("discard", "cancel changes", "drop corrections")
+  • Reviewing pending changes ("what's pending", "show corrections")
+  • Any follow-up to a knowledge_updater conversation where the user is confirming, accepting, or providing additional content for a doc operation.
 
-IMPORTANT RULES:
-1. Look at the conversation history. If the previous assistant response came from the debug agent (asked for a time range, showed KQL results, or discussed errors/TaskIds/GUIDs), then the current message is very likely a follow-up to that debug session — route to "debug".
-2. Short replies like time ranges ("30 days", "last 7d", "90 days"), confirmations ("yes", "go ahead", "proceed"), or GUIDs are almost always debug follow-ups if a debug conversation is active.
-3. Only route to "knowledge" if the user is clearly asking a NEW question about project docs, architecture, or features.
-4. Route to "knowledge_updater" ONLY when the user is clearly correcting or updating information — not when they are just asking a question.
+IMPORTANT ROUTING RULES:
+1. Look at the conversation history.  If the previous assistant response came from a specific agent, the current message is very likely a follow-up — route to the SAME agent unless the user clearly changes topic.
+2. Short replies like time ranges ("30 days"), confirmations ("yes", "go ahead", "proceed"), or GUIDs are almost always follow-ups to the currently active agent.
+3. If the knowledge_updater previously offered to create a doc and the user responds with "yes", "create doc", "save doc", "go ahead", etc., route to "knowledge_updater".
+4. If there are pending corrections and the user says "submit", "agree", "discard", etc., route to "knowledge_updater".
+5. Route to "coder" ONLY when the user is specifically asking about source code, call chains, or implementation details in the codebase — NOT for doc operations.
+6. Only route to "knowledge" if the user is clearly asking a NEW informational question.
+
+{state_context}
 
 Respond with EXACTLY one of these formats (no other text):
 ROUTE:knowledge
@@ -45,7 +56,7 @@ ROUTE:debug
 ROUTE:coder
 ROUTE:knowledge_updater
 
-If the message is a greeting or unclear AND there is no active debug conversation, default to:
+If the message is a greeting or unclear AND there is no active conversation, default to:
 ROUTE:knowledge
 """
 
@@ -117,9 +128,27 @@ class BrainAgent:
                     content = content[:300] + "...(truncated)"
                 routing_history.append({"role": msg["role"], "content": content})
 
+            # Build dynamic state context so the router knows about pending ops
+            state_lines = []
+            updater = self._agents.get("knowledge_updater")
+            if updater and updater.pending_count > 0:
+                state_lines.append(
+                    f"STATE: The knowledge_updater agent has {updater.pending_count} "
+                    f"pending correction(s) waiting to be submitted or discarded."
+                )
+            if updater and updater._pending_new_doc:
+                state_lines.append(
+                    "STATE: The knowledge_updater agent previously offered to create a new document "
+                    "and is waiting for the user to confirm (e.g. 'create doc', 'yes', 'save doc')."
+                )
+            state_context = "\n".join(state_lines) if state_lines else ""
+
+            # Inject state into the system prompt
+            system_prompt = ROUTER_SYSTEM_PROMPT.format(state_context=state_context)
+
             text = self.llm.generate(
                 message=message,
-                system=ROUTER_SYSTEM_PROMPT,
+                system=system_prompt,
                 history=routing_history,
             ).strip()
 
@@ -185,21 +214,14 @@ class BrainAgent:
         """
         # Pre-route check: if knowledge_updater has pending corrections
         # and the user says "agree"/"submit"/etc., go straight there
-        updater = self._agents.get("knowledge_updater")
-        if updater and updater.pending_count > 0 and (
-            updater._is_submit_request(message) or updater._is_discard_request(message)
-        ):
-            agent_name = "knowledge_updater"
-            log.info("Fast-path to knowledge_updater (pending corrections + submit/discard keyword).")
-        elif updater and updater._pending_new_doc and updater._is_create_doc_request(message):
-            agent_name = "knowledge_updater"
-            log.info("Fast-path to knowledge_updater (pending new-doc + create-doc keyword).")
-        else:
-            agent_name = self._route(message)
+        # (Removed: we now let the LLM router handle this via state context
+        #  injected into ROUTER_SYSTEM_PROMPT.)
+        agent_name = self._route(message)
 
         log.info("Routed to: %s", agent_name)
 
         # Guard: warn if leaving knowledge_updater with pending corrections
+        updater = self._agents.get("knowledge_updater")
         if (
             updater
             and updater.pending_count > 0
