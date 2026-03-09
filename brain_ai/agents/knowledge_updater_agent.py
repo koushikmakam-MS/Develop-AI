@@ -17,12 +17,12 @@ import json
 import logging
 import re
 from pathlib import Path
-from typing import Dict, List, Any, Optional
+from typing import Any, Dict, List, Optional
 
 from brain_ai.config import get_config
 from brain_ai.llm_client import LLMClient
-from brain_ai.vectorstore.indexer import DocIndexer
 from brain_ai.sync.devops_pr import AzureDevOpsPR
+from brain_ai.vectorstore.indexer import DocIndexer
 
 log = logging.getLogger(__name__)
 

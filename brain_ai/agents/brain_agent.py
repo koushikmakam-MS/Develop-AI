@@ -8,19 +8,18 @@ Receives user messages and routes them to the appropriate sub-agent:
 Extensible: add new agents by registering them in AGENT_REGISTRY.
 """
 
-import logging
-from typing import List, Dict, Any, Optional
-
 import json
+import logging
 import os
 from datetime import datetime, timezone
+from typing import Any, Dict, List, Optional
 
+from brain_ai.agents.coder_agent import CoderAgent
+from brain_ai.agents.debug_agent import DebugAgent
+from brain_ai.agents.knowledge_agent import KnowledgeAgent
+from brain_ai.agents.knowledge_updater_agent import KnowledgeUpdaterAgent
 from brain_ai.config import get_config
 from brain_ai.llm_client import LLMClient
-from brain_ai.agents.knowledge_agent import KnowledgeAgent
-from brain_ai.agents.debug_agent import DebugAgent
-from brain_ai.agents.coder_agent import CoderAgent
-from brain_ai.agents.knowledge_updater_agent import KnowledgeUpdaterAgent
 
 log = logging.getLogger(__name__)
 

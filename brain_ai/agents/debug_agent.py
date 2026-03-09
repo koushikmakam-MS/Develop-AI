@@ -6,12 +6,12 @@ procedures from docs and generating/running KQL queries.
 
 import logging
 import re
-from typing import List, Dict, Any, Optional
+from typing import Dict, List, Optional
 
 from brain_ai.config import get_config
+from brain_ai.kusto.client import KustoMCPClient
 from brain_ai.llm_client import LLMClient
 from brain_ai.vectorstore.indexer import DocIndexer
-from brain_ai.kusto.client import KustoMCPClient
 
 log = logging.getLogger(__name__)
 

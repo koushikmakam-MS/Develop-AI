@@ -1,11 +1,13 @@
 """Quick test: verify doc_gap_threshold works end-to-end."""
-import logging, json, os
+import json
+import logging
+import os
 
 logging.basicConfig(level=logging.INFO, format="%(name)s - %(levelname)s - %(message)s")
 
-from brain_ai.config import get_config
-from brain_ai.agents.knowledge_agent import KnowledgeAgent
 from brain_ai.agents.brain_agent import BrainAgent
+from brain_ai.agents.knowledge_agent import KnowledgeAgent
+from brain_ai.config import get_config
 
 cfg = get_config()
 
@@ -21,7 +23,7 @@ hits_good = ka.indexer.search("How does backup policy work in DPP?", top_k=3)
 best_good = max(h["score"] for h in hits_good) if hits_good else 0
 gap_good = best_good < gap_threshold
 coder_good = best_good < threshold
-print(f"\n[GOOD] 'How does backup policy work in DPP?'")
+print("\n[GOOD] 'How does backup policy work in DPP?'")
 print(f"  Best score: {best_good:.3f}")
 print(f"  Doc gap triggered? {gap_good}  (want: False)")
 print(f"  Coder fallback?    {coder_good}  (want: False)")
@@ -34,7 +36,7 @@ hits_med = ka.indexer.search("What is the retry logic for backup operations?", t
 best_med = max(h["score"] for h in hits_med) if hits_med else 0
 gap_med = best_med < gap_threshold
 coder_med = best_med < threshold
-print(f"\n[MEDIOCRE] 'What is the retry logic for backup operations?'")
+print("\n[MEDIOCRE] 'What is the retry logic for backup operations?'")
 print(f"  Best score: {best_med:.3f}")
 print(f"  Doc gap triggered? {gap_med}")
 print(f"  Coder fallback?    {coder_med}")
@@ -44,7 +46,7 @@ hits_bad = ka.indexer.search("How does Kubernetes pod scheduling work?", top_k=3
 best_bad = max(h["score"] for h in hits_bad) if hits_bad else 0
 gap_bad = best_bad < gap_threshold
 coder_bad = best_bad < threshold
-print(f"\n[POOR] 'How does Kubernetes pod scheduling work?'")
+print("\n[POOR] 'How does Kubernetes pod scheduling work?'")
 print(f"  Best score: {best_bad:.3f}")
 print(f"  Doc gap triggered? {gap_bad}  (want: True)")
 print(f"  Coder fallback?    {coder_bad}  (want: True)")

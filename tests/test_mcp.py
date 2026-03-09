@@ -1,6 +1,7 @@
 """Quick test script for the Kusto MCP server."""
 import json
 import urllib.request
+
 from brain_ai.kusto.client import KustoMCPClient
 
 

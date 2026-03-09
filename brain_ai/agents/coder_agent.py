@@ -11,7 +11,7 @@ when new commits land.
 """
 
 import logging
-from typing import List, Dict, Any, Optional
+from typing import Dict, List
 
 from brain_ai.config import get_config
 from brain_ai.llm_client import LLMClient
@@ -100,7 +100,6 @@ class CoderAgent:
         for i, hit in enumerate(hits, 1):
             source = hit["source"]
             label = hit.get("chunk_label", "")
-            symbols = hit.get("symbols", "")
             ext = hit.get("file_ext", "")
 
             header = f"--- Code [{i}]: {source}"

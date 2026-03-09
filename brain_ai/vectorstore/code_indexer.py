@@ -12,7 +12,7 @@ import hashlib
 import logging
 import re
 from pathlib import Path
-from typing import List, Dict, Any, Optional, Tuple
+from typing import Any, Dict, List, Tuple
 
 import chromadb
 

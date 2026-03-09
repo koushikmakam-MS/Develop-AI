@@ -1,6 +1,5 @@
 """Basic smoke tests for BCDR DeveloperAI modules."""
 
-import pytest
 from pathlib import Path
 
 

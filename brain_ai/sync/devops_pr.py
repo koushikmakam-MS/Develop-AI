@@ -7,12 +7,12 @@ against the Azure DevOps repo using the REST API.
 Used by the Knowledge Updater Agent to propose doc corrections.
 """
 
+import base64
 import json
 import logging
 import re
-import base64
-import urllib.request
 import urllib.error
+import urllib.request
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Dict, List, Optional

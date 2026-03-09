@@ -12,9 +12,10 @@ Load order (last wins):
 """
 
 import os
-import yaml
 from pathlib import Path
 from typing import Any, Dict
+
+import yaml
 
 _CONFIG_CACHE: Dict[str, Any] | None = None
 

@@ -1,0 +1,289 @@
+"""Tests for brain_ai.agents.brain_agent — routing, thresholds, fallback."""
+
+import json
+import os
+from unittest.mock import MagicMock, patch
+
+from brain_ai.agents.brain_agent import ROUTER_SYSTEM_PROMPT, BrainAgent
+
+
+def _make_cfg():
+    """Minimal config with all agents disabled (we mock them individually)."""
+    return {
+        "llm": {
+            "model": "test",
+            "endpoint": "https://test.openai.azure.com",
+            "api_key": "key",
+        },
+        "vectorstore": {
+            "persist_dir": ".chromadb",
+            "collection": "test",
+            "code_collection": "test_code",
+        },
+        "paths": {
+            "docs_dir": "docs/agentKT",
+            "repo_clone_dir": ".repo_cache",
+        },
+        "kusto": {
+            "cluster_url": "https://c",
+            "database": "db",
+            "mcp_url": "http://127.0.0.1:8701",
+        },
+        "azure_devops": {
+            "pat": "p",
+            "repo_url": "https://x.visualstudio.com/P/_git/R",
+            "branch": "main",
+        },
+        "agents": {
+            "enabled": [],  # we'll register mocks manually
+            "knowledge_confidence_threshold": 0.45,
+            "doc_gap_threshold": 0.50,
+        },
+    }
+
+
+# ── Router system prompt ─────────────────────────────────────────────────
+
+class TestRouterPrompt:
+    def test_all_agents_mentioned(self):
+        for agent in ["knowledge", "debug", "coder", "knowledge_updater"]:
+            assert agent in ROUTER_SYSTEM_PROMPT
+
+    def test_route_format_mentioned(self):
+        assert "ROUTE:" in ROUTER_SYSTEM_PROMPT
+
+
+# ── Threshold properties ─────────────────────────────────────────────────
+
+class TestThresholds:
+    @patch("brain_ai.agents.brain_agent.KnowledgeAgent")
+    @patch("brain_ai.agents.brain_agent.DebugAgent")
+    @patch("brain_ai.agents.brain_agent.CoderAgent")
+    @patch("brain_ai.agents.brain_agent.KnowledgeUpdaterAgent")
+    def test_threshold_from_config(self, *_mocks):
+        cfg = _make_cfg()
+        cfg["agents"]["enabled"] = []
+        brain = BrainAgent(cfg)
+        assert brain._knowledge_confidence_threshold == 0.45
+        assert brain._doc_gap_threshold == 0.50
+
+    @patch("brain_ai.agents.brain_agent.KnowledgeAgent")
+    @patch("brain_ai.agents.brain_agent.DebugAgent")
+    @patch("brain_ai.agents.brain_agent.CoderAgent")
+    @patch("brain_ai.agents.brain_agent.KnowledgeUpdaterAgent")
+    def test_threshold_defaults(self, *_mocks):
+        cfg = _make_cfg()
+        del cfg["agents"]["knowledge_confidence_threshold"]
+        del cfg["agents"]["doc_gap_threshold"]
+        brain = BrainAgent(cfg)
+        assert brain._knowledge_confidence_threshold == 0.35
+        assert brain._doc_gap_threshold == 0.50
+
+
+# ── Routing ──────────────────────────────────────────────────────────────
+
+class TestRouting:
+    def _make_brain(self):
+        cfg = _make_cfg()
+        cfg["agents"]["enabled"] = []
+        brain = BrainAgent(cfg)
+        return brain
+
+    @patch("brain_ai.agents.brain_agent.KnowledgeAgent")
+    @patch("brain_ai.agents.brain_agent.DebugAgent")
+    @patch("brain_ai.agents.brain_agent.CoderAgent")
+    @patch("brain_ai.agents.brain_agent.KnowledgeUpdaterAgent")
+    def test_route_parses_knowledge(self, *_mocks):
+        brain = self._make_brain()
+        brain._agents["knowledge"] = MagicMock()
+        brain.llm.generate = MagicMock(return_value="ROUTE:knowledge")
+        assert brain._route("How does backup work?") == "knowledge"
+
+    @patch("brain_ai.agents.brain_agent.KnowledgeAgent")
+    @patch("brain_ai.agents.brain_agent.DebugAgent")
+    @patch("brain_ai.agents.brain_agent.CoderAgent")
+    @patch("brain_ai.agents.brain_agent.KnowledgeUpdaterAgent")
+    def test_route_parses_debug(self, *_mocks):
+        brain = self._make_brain()
+        brain._agents["debug"] = MagicMock()
+        brain.llm.generate = MagicMock(return_value="ROUTE:debug")
+        assert brain._route("Debug this TaskId") == "debug"
+
+    @patch("brain_ai.agents.brain_agent.KnowledgeAgent")
+    @patch("brain_ai.agents.brain_agent.DebugAgent")
+    @patch("brain_ai.agents.brain_agent.CoderAgent")
+    @patch("brain_ai.agents.brain_agent.KnowledgeUpdaterAgent")
+    def test_route_parses_coder(self, *_mocks):
+        brain = self._make_brain()
+        brain._agents["coder"] = MagicMock()
+        brain.llm.generate = MagicMock(return_value="ROUTE:coder")
+        assert brain._route("trace the code") == "coder"
+
+    @patch("brain_ai.agents.brain_agent.KnowledgeAgent")
+    @patch("brain_ai.agents.brain_agent.DebugAgent")
+    @patch("brain_ai.agents.brain_agent.CoderAgent")
+    @patch("brain_ai.agents.brain_agent.KnowledgeUpdaterAgent")
+    def test_route_defaults_on_garbage(self, *_mocks):
+        brain = self._make_brain()
+        brain.llm.generate = MagicMock(return_value="I don't know what to do")
+        assert brain._route("hello") == "knowledge"
+
+    @patch("brain_ai.agents.brain_agent.KnowledgeAgent")
+    @patch("brain_ai.agents.brain_agent.DebugAgent")
+    @patch("brain_ai.agents.brain_agent.CoderAgent")
+    @patch("brain_ai.agents.brain_agent.KnowledgeUpdaterAgent")
+    def test_route_defaults_on_exception(self, *_mocks):
+        brain = self._make_brain()
+        brain.llm.generate = MagicMock(side_effect=RuntimeError("boom"))
+        assert brain._route("hello") == "knowledge"
+
+
+# ── Knowledge → Coder fallback ───────────────────────────────────────────
+
+class TestKnowledgeCoderFallback:
+    @patch("brain_ai.agents.brain_agent.KnowledgeAgent")
+    @patch("brain_ai.agents.brain_agent.DebugAgent")
+    @patch("brain_ai.agents.brain_agent.CoderAgent")
+    @patch("brain_ai.agents.brain_agent.KnowledgeUpdaterAgent")
+    def test_low_confidence_falls_back_to_coder(self, *_mocks):
+        cfg = _make_cfg()
+        cfg["agents"]["enabled"] = []
+        brain = BrainAgent(cfg)
+
+        # Mock knowledge agent with low confidence
+        mock_knowledge = MagicMock()
+        mock_knowledge.answer_with_confidence.return_value = ("weak doc answer", 0.20)
+        brain._agents["knowledge"] = mock_knowledge
+
+        # Mock coder agent with a good answer
+        mock_coder = MagicMock()
+        mock_coder.analyze.return_value = "Here's the code path..."
+        brain._agents["coder"] = mock_coder
+
+        # Force routing to knowledge
+        brain.llm.generate = MagicMock(return_value="ROUTE:knowledge")
+
+        result = brain.chat("some question")
+        assert result["agent"] == "coder"
+        assert "code path" in result["response"]
+
+    @patch("brain_ai.agents.brain_agent.KnowledgeAgent")
+    @patch("brain_ai.agents.brain_agent.DebugAgent")
+    @patch("brain_ai.agents.brain_agent.CoderAgent")
+    @patch("brain_ai.agents.brain_agent.KnowledgeUpdaterAgent")
+    def test_high_confidence_stays_with_knowledge(self, *_mocks):
+        cfg = _make_cfg()
+        cfg["agents"]["enabled"] = []
+        brain = BrainAgent(cfg)
+
+        mock_knowledge = MagicMock()
+        mock_knowledge.answer_with_confidence.return_value = ("great doc answer", 0.85)
+        brain._agents["knowledge"] = mock_knowledge
+
+        brain.llm.generate = MagicMock(return_value="ROUTE:knowledge")
+
+        result = brain.chat("well-documented question")
+        assert result["agent"] == "knowledge"
+        assert "great doc answer" in result["response"]
+
+    @patch("brain_ai.agents.brain_agent.KnowledgeAgent")
+    @patch("brain_ai.agents.brain_agent.DebugAgent")
+    @patch("brain_ai.agents.brain_agent.CoderAgent")
+    @patch("brain_ai.agents.brain_agent.KnowledgeUpdaterAgent")
+    def test_coder_fallback_with_no_code_returns_helpful_message(self, *_mocks):
+        cfg = _make_cfg()
+        cfg["agents"]["enabled"] = []
+        brain = BrainAgent(cfg)
+
+        mock_knowledge = MagicMock()
+        mock_knowledge.answer_with_confidence.return_value = ("weak", 0.10)
+        brain._agents["knowledge"] = mock_knowledge
+
+        mock_coder = MagicMock()
+        mock_coder.analyze.return_value = "I don't have any indexed source code yet."
+        brain._agents["coder"] = mock_coder
+
+        brain.llm.generate = MagicMock(return_value="ROUTE:knowledge")
+
+        result = brain.chat("obscure topic")
+        assert "couldn't find relevant information" in result["response"]
+
+
+# ── Doc gap logging ──────────────────────────────────────────────────────
+
+class TestDocGapLogging:
+    def test_doc_gap_logged_below_threshold(self, tmp_path):
+        with patch("brain_ai.agents.brain_agent.KnowledgeAgent"), \
+             patch("brain_ai.agents.brain_agent.DebugAgent"), \
+             patch("brain_ai.agents.brain_agent.CoderAgent"), \
+             patch("brain_ai.agents.brain_agent.KnowledgeUpdaterAgent"):
+            cfg = _make_cfg()
+            cfg["agents"]["enabled"] = []
+            cfg["paths"]["docs_dir"] = str(tmp_path / "docs")
+            os.makedirs(cfg["paths"]["docs_dir"], exist_ok=True)
+            brain = BrainAgent(cfg)
+
+            brain._log_doc_gap("some undocumented question", 0.25)
+
+            gap_file = tmp_path / "doc_gaps.json"
+            assert gap_file.exists()
+            gaps = json.loads(gap_file.read_text())
+            assert len(gaps) == 1
+            assert gaps[0]["question"] == "some undocumented question"
+            assert gaps[0]["confidence"] == 0.25
+
+    def test_doc_gap_appends_to_existing(self, tmp_path):
+        with patch("brain_ai.agents.brain_agent.KnowledgeAgent"), \
+             patch("brain_ai.agents.brain_agent.DebugAgent"), \
+             patch("brain_ai.agents.brain_agent.CoderAgent"), \
+             patch("brain_ai.agents.brain_agent.KnowledgeUpdaterAgent"):
+            cfg = _make_cfg()
+            cfg["agents"]["enabled"] = []
+            cfg["paths"]["docs_dir"] = str(tmp_path / "docs")
+            os.makedirs(cfg["paths"]["docs_dir"], exist_ok=True)
+
+            gap_file = tmp_path / "doc_gaps.json"
+            gap_file.write_text(json.dumps([{"question": "old", "confidence": 0.1}]))
+
+            brain = BrainAgent(cfg)
+            brain._log_doc_gap("new question", 0.30)
+
+            gaps = json.loads(gap_file.read_text())
+            assert len(gaps) == 2
+
+
+# ── Conversation history ─────────────────────────────────────────────────
+
+class TestConversationHistory:
+    @patch("brain_ai.agents.brain_agent.KnowledgeAgent")
+    @patch("brain_ai.agents.brain_agent.DebugAgent")
+    @patch("brain_ai.agents.brain_agent.CoderAgent")
+    @patch("brain_ai.agents.brain_agent.KnowledgeUpdaterAgent")
+    def test_history_capped_at_20(self, *_mocks):
+        cfg = _make_cfg()
+        cfg["agents"]["enabled"] = []
+        brain = BrainAgent(cfg)
+
+        mock_agent = MagicMock()
+        mock_agent.answer_with_confidence.return_value = ("ok", 0.90)
+        brain._agents["knowledge"] = mock_agent
+        brain.llm.generate = MagicMock(return_value="ROUTE:knowledge")
+
+        for i in range(15):
+            brain.chat(f"message {i}")
+
+        assert len(brain._conversation_history) <= 20
+
+    @patch("brain_ai.agents.brain_agent.KnowledgeAgent")
+    @patch("brain_ai.agents.brain_agent.DebugAgent")
+    @patch("brain_ai.agents.brain_agent.CoderAgent")
+    @patch("brain_ai.agents.brain_agent.KnowledgeUpdaterAgent")
+    def test_reset_clears_history(self, *_mocks):
+        cfg = _make_cfg()
+        cfg["agents"]["enabled"] = []
+        brain = BrainAgent(cfg)
+        brain._conversation_history = [{"role": "user", "content": "hi"}]
+        brain._last_agent = "knowledge"
+        brain.reset_conversation()
+        assert brain._conversation_history == []
+        assert brain._last_agent is None

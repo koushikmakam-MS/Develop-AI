@@ -24,8 +24,8 @@ from botbuilder.schema import (
     ConversationReference,
 )
 
-from brain_ai.config import get_config
 from brain_ai.agents.brain_agent import BrainAgent
+from brain_ai.config import get_config
 
 log = logging.getLogger(__name__)
 

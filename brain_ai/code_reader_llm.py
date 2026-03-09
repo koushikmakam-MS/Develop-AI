@@ -12,7 +12,7 @@ NOTE: gpt-5.1-codex-mini uses the **Responses API** (not Chat Completions).
 import logging
 import time
 
-from openai import OpenAI, APIStatusError
+from openai import APIStatusError, OpenAI
 
 from brain_ai.config import get_config
 

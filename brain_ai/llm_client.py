@@ -1,6 +1,7 @@
-from openai import OpenAI, APIStatusError
 import logging
 import time
+
+from openai import APIStatusError, OpenAI
 
 from brain_ai.config import get_config
 

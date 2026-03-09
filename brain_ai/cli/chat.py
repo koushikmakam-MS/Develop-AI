@@ -12,15 +12,14 @@ import logging
 import sys
 from typing import Optional
 
+from prompt_toolkit import prompt
+from prompt_toolkit.history import InMemoryHistory
 from rich.console import Console
 from rich.markdown import Markdown
 from rich.panel import Panel
-from rich.text import Text
-from prompt_toolkit import prompt
-from prompt_toolkit.history import InMemoryHistory
 
-from brain_ai.config import get_config
 from brain_ai.agents.brain_agent import BrainAgent
+from brain_ai.config import get_config
 
 log = logging.getLogger(__name__)
 

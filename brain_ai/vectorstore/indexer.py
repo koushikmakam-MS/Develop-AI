@@ -9,10 +9,9 @@ import hashlib
 import logging
 import re
 from pathlib import Path
-from typing import List, Dict, Any, Optional
+from typing import Any, Dict, List
 
 import chromadb
-from chromadb.config import Settings
 
 from brain_ai.config import get_config
 

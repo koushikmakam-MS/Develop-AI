@@ -5,11 +5,10 @@ Designed to run daily (via cron, Task Scheduler, or `run_sync.py`).
 Uses git commands to detect whether files have changed before copying.
 """
 
-import os
-import shutil
 import logging
-from pathlib import Path
+import shutil
 from datetime import datetime, timezone
+from pathlib import Path
 from typing import List
 
 from brain_ai.config import get_config

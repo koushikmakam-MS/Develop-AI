@@ -14,15 +14,14 @@ Runs all services in one process:
 
 import asyncio
 import logging
-import sys
 
 from aiohttp import web
 from botbuilder.core import BotFrameworkAdapter
 from botbuilder.schema import Activity
 
-from brain_ai.config import get_config
 from brain_ai.bot.adapter import create_adapter
 from brain_ai.bot.teams_bot import BrainAIBot
+from brain_ai.config import get_config
 
 log = logging.getLogger(__name__)
 
@@ -32,6 +31,7 @@ log = logging.getLogger(__name__)
 async def _run_kusto_server(cfg: dict):
     """Start the Kusto MCP server in a background thread."""
     import uvicorn
+
     from brain_ai.kusto.server import create_app as create_kusto_app
 
     kusto_port = cfg.get("kusto", {}).get("mcp_port", 8701)
@@ -51,8 +51,8 @@ async def _run_kusto_server(cfg: dict):
 async def _daily_sync_loop(cfg: dict, interval_hours: int = 24):
     """Run daily sync + re-index on a repeating schedule."""
     from brain_ai.sync.repo_sync import sync_docs
-    from brain_ai.vectorstore.indexer import DocIndexer
     from brain_ai.vectorstore.code_indexer import CodeIndexer
+    from brain_ai.vectorstore.indexer import DocIndexer
 
     log.info("Daily sync scheduler started (interval: %dh)", interval_hours)
     while True:
@@ -97,8 +97,8 @@ async def _doc_improver_loop(cfg: dict):
 def _trigger_sync(cfg: dict):
     """Run sync + re-index once (called from the /api/daily-sync webhook)."""
     from brain_ai.sync.repo_sync import sync_docs
-    from brain_ai.vectorstore.indexer import DocIndexer
     from brain_ai.vectorstore.code_indexer import CodeIndexer
+    from brain_ai.vectorstore.indexer import DocIndexer
 
     sync_docs()
     DocIndexer(cfg).index_all()
@@ -199,15 +199,15 @@ def run(port: int = 3978, cfg: dict | None = None):
     app = create_app(cfg)
 
     print(f"\n{'='*60}")
-    print(f"  🤖 BCDR DeveloperAI Teams Bot")
+    print("  🤖 BCDR DeveloperAI Teams Bot")
     print(f"  Bot endpoint:   http://localhost:{port}/api/messages")
     print(f"  Health check:   http://localhost:{port}/api/health")
     print(f"  Manual sync:    POST http://localhost:{port}/api/daily-sync")
     print(f"{'='*60}")
-    print(f"\n  Background services:")
+    print("\n  Background services:")
     print(f"  • Kusto MCP server (port {cfg.get('kusto', {}).get('mcp_port', 8701)})")
     print(f"  • Daily sync scheduler ({cfg.get('teams_bot', {}).get('sync_interval_hours', 24)}h)")
-    print(f"  • Unanswered-message monitor (10 min)")
+    print("  • Unanswered-message monitor (10 min)")
     imp = cfg.get("doc_improver", {})
     if imp.get("enabled", False):
         print(f"  • Doc Improver ({imp.get('run_interval_hours', 72)}h cycle, "

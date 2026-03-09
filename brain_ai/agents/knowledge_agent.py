@@ -4,7 +4,7 @@ over the indexed markdown documentation.
 """
 
 import logging
-from typing import List, Dict, Any
+from typing import Dict, List
 
 from brain_ai.config import get_config
 from brain_ai.llm_client import LLMClient

@@ -12,19 +12,17 @@ Usage:
     cfg = preflight_check()   # returns config dict, raises on fatal errors
 """
 
-import logging
 import json
-import os
+import logging
 import subprocess
 import sys
 import time
-import urllib.request
 import urllib.error
+import urllib.request
 from pathlib import Path
 from typing import Any, Dict, Optional, Tuple
 
 from rich.console import Console
-from rich.text import Text
 
 from brain_ai.config import get_config
 

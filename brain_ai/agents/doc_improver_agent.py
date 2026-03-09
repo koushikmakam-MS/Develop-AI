@@ -26,16 +26,15 @@ import difflib
 import json
 import logging
 import re
-from datetime import datetime, timezone
 from pathlib import Path
-from typing import Any, Dict, List, Optional, Tuple
+from typing import Any, Dict, List, Optional
 
-from brain_ai.config import get_config
 from brain_ai.code_reader_llm import CodeReaderLLM
+from brain_ai.config import get_config
 from brain_ai.llm_client import LLMClient
-from brain_ai.vectorstore.indexer import DocIndexer
-from brain_ai.vectorstore.code_indexer import CodeIndexer
 from brain_ai.sync.devops_pr import AzureDevOpsPR
+from brain_ai.vectorstore.code_indexer import CodeIndexer
+from brain_ai.vectorstore.indexer import DocIndexer
 
 log = logging.getLogger(__name__)
 
@@ -1059,8 +1058,8 @@ class DocImproverAgent:
                 new_content.splitlines(keepends=True),
                 lineterm="",
             ))
-            added_lines = sum(1 for l in diff_lines if l.startswith("+") and not l.startswith("+++"))
-            removed_lines = sum(1 for l in diff_lines if l.startswith("-") and not l.startswith("---"))
+            added_lines = sum(1 for line in diff_lines if line.startswith("+") and not line.startswith("+++"))
+            removed_lines = sum(1 for line in diff_lines if line.startswith("-") and not line.startswith("---"))
             net_change = added_lines + removed_lines
 
             if net_change >= self.min_diff_lines:
@@ -1106,9 +1105,6 @@ class DocImproverAgent:
 
     def _create_improvement_pr(self, changes: List[Dict[str, str]]) -> Dict[str, Any]:
         """Create a single PR with all doc improvements."""
-        timestamp = datetime.now(timezone.utc).strftime("%Y%m%d-%H%M%S")
-        branch_name = f"{self.branch_prefix}/{timestamp}"
-
         # Build file_changes for the batch PR
         file_changes = []
         for c in changes:

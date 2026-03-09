@@ -9,7 +9,7 @@ Falls back to direct Kusto SDK if the MCP server is not running.
 
 import json
 import logging
-from typing import Any, Dict, List, Optional
+from typing import Any, Dict, Optional
 
 from brain_ai.config import get_config
 
@@ -53,8 +53,8 @@ class KustoMCPClient:
 
     def _try_mcp_server(self, query: str, database: str) -> Optional[Dict[str, Any]]:
         """Try executing via MCP HTTP server."""
-        import urllib.request
         import urllib.error
+        import urllib.request
 
         url = f"{self.mcp_url}/tools/execute_kql"
         payload = json.dumps({"query": query, "database": database}).encode("utf-8")
@@ -114,8 +114,8 @@ class KustoMCPClient:
 
     def health_check(self) -> Dict[str, Any]:
         """Check if the MCP server is reachable."""
-        import urllib.request
         import urllib.error
+        import urllib.request
 
         url = f"{self.mcp_url}/health"
         try:
