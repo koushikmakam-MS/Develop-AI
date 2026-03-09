@@ -210,7 +210,7 @@ class CoderAgent:
         # Sort by score descending so the most relevant code comes first
         merged = sorted(best_by_key.values(), key=lambda h: h["score"], reverse=True)
         log.info(
-            "Multi-query search: %d queries → %d unique chunks (min_score=%.2f)",
+            "Multi-query search: %d queries -> %d unique chunks (min_score=%.2f)",
             len(queries), len(merged), self._min_score,
         )
         return merged

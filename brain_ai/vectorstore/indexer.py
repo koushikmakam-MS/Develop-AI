@@ -194,7 +194,7 @@ class DocIndexer:
             documents=chunks,
             metadatas=metadatas,
         )
-        log.info("Indexed single file %s → %d chunks", rel_path, len(chunks))
+        log.info("Indexed single file %s -> %d chunks", rel_path, len(chunks))
         return len(chunks)
 
     def search(self, query: str, top_k: int = 5) -> List[Dict[str, Any]]:
