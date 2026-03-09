@@ -84,12 +84,12 @@ agents:
     - "knowledge_updater"
   # Minimum similarity score (0.0–1.0) for the knowledge agent to be
   # considered a confident match. Below this the coder agent is tried.
-  knowledge_confidence_threshold: 0.35
+  knowledge_confidence_threshold: 0.45
   # If knowledge confidence is below this, flag the topic as a documentation
   # gap and offer to create a new doc via the knowledge_updater agent.
   # Note: with all-MiniLM-L6-v2 embeddings, good matches score ~0.50-0.60,
   # mediocre matches ~0.35-0.50, and poor matches <0.35.
-  doc_gap_threshold: 0.45
+  doc_gap_threshold: 0.50
 
 # --- Microsoft Teams Bot ---
 # Register your bot at https://dev.botframework.com or via Azure Bot Service.

@@ -244,20 +244,21 @@ class BrainAgent:
                         f"or I've logged it to `doc_gaps.json` for later review."
                     )
 
-                # Fallback: if knowledge docs are low-relevance, try coder agent
+                # Fallback: if knowledge docs are low-relevance, automatically
+                # route to coder agent for a source-code-based answer.
                 if confidence < threshold and "coder" in self._agents:
-                    log.info("Knowledge confidence %.3f below threshold — falling back to coder agent.",
-                             confidence)
+                    log.info(
+                        "Knowledge confidence %.3f below threshold %.2f "
+                        "— auto-routing to coder agent.",
+                        confidence, threshold,
+                    )
                     coder = self._agents["coder"]
                     coder_response = coder.analyze(message, self._conversation_history)
                     if coder_response and not coder_response.startswith("I don't have any indexed source code"):
                         agent_name = "coder"
-                        response_text = (
-                            f"📌 *Documentation relevance was low ({confidence:.0%}) "
-                            f"— searching source code instead...*\n\n"
-                            + coder_response
-                        )
+                        response_text = coder_response
                     else:
+                        # Neither docs nor code had a good answer
                         response_text = (
                             "I couldn't find relevant information in the project documentation "
                             "or the source code for this query. You could try:\n"
