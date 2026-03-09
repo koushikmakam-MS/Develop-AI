@@ -35,7 +35,7 @@ llm:
   # api_key: set in config.local.yaml
   api_version: "2025-01-01-preview"
   model: "gpt-4o-mini"
-  max_tokens: 4096
+  max_tokens: 8192
 
 # --- Kusto / Azure Data Explorer ---
 # cluster_url & database: set in config.local.yaml or env vars
@@ -73,6 +73,26 @@ code_index:
     - ".py"
     - ".json"
     - ".config"
+
+# --- Coder Agent ---
+# Controls how much code context the coder agent feeds to the LLM.
+coder_agent:
+  # Max code chunks to retrieve per search query
+  top_k_per_query: 12
+  # Max total characters of code context sent to the LLM
+  # gpt-4o-mini supports ~128K tokens (~400K chars); we use a
+  # conservative budget so the system prompt + history still fit.
+  max_context_chars: 80000
+  # Minimum relevance score (0-1) to include a code chunk
+  min_relevance_score: 0.20
+
+# --- Protected Docs (shared across all agents) ---
+# These files are read-only reference material. No agent (knowledge_updater,
+# doc_improver, etc.) is allowed to modify them.  They will still be
+# searched for context, but edits are blocked.
+protected_docs:
+  - "BackupMgmt_Architecture_Memory.md"
+  - "Telemetry_And_Logging_Reference.md"
 
 # --- Agent Routing ---
 agents:
@@ -128,7 +148,9 @@ doc_improver:
   # Folders within the repo that contain the source code to analyze
   code_folders:
     - "src/Microsoft.Azure.Management.BackupManagement"
-  # Docs that must NOT be modified by the agent
+  # Additional docs protected by this agent only (merged with top-level
+  # protected_docs list).  Prefer adding entries to the top-level list
+  # so ALL agents respect them.
   protected_docs:
     - "BackupMgmt_Architecture_Memory.md"
   # Branch prefix for doc improvement PRs

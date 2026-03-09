@@ -277,7 +277,12 @@ class DocImproverAgent:
 
         imp_cfg = cfg.get("doc_improver", {})
         self.max_iterations = imp_cfg.get("max_iterations", 3)
-        self.protected_docs = set(imp_cfg.get("protected_docs", ["BackupMgmt_Architecture_Memory.md"]))
+        # Merge top-level protected list with per-agent overrides
+        global_protected = cfg.get("protected_docs", [])
+        agent_protected = imp_cfg.get("protected_docs", [])
+        self.protected_docs: set[str] = set(global_protected) | set(agent_protected)
+        if not self.protected_docs:
+            self.protected_docs = {"BackupMgmt_Architecture_Memory.md"}
         self.branch_prefix = imp_cfg.get("branch_prefix", "BCDR-devai/doc-improvement")
         self.min_diff_lines = imp_cfg.get("min_diff_lines", 10)
         self.code_folders = imp_cfg.get("code_folders", [])

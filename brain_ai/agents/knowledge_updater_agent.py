@@ -131,11 +131,16 @@ class KnowledgeUpdaterAgent:
         ado = cfg["azure_devops"]
         self.sync_paths = ado.get("sync_paths", [])
 
+        # Protected (read-only) docs — never modified by this agent
+        self.protected_docs: set[str] = set(cfg.get("protected_docs", []))
+        if not self.protected_docs:
+            self.protected_docs = {"BackupMgmt_Architecture_Memory.md"}
+
         # ── Session state: accumulated corrections ──
         # Each entry: {doc_source, repo_path, correction, summary, new_content}
         self._pending_corrections: List[Dict[str, str]] = []
 
-        log.info("KnowledgeUpdaterAgent ready.")
+        log.info("KnowledgeUpdaterAgent ready (protected_docs=%s).", self.protected_docs)
 
     # ── Public API ───────────────────────────────────────────
 
@@ -161,6 +166,10 @@ class KnowledgeUpdaterAgent:
     @property
     def pending_count(self) -> int:
         return len(self._pending_corrections)
+
+    def is_protected(self, doc_source: str) -> bool:
+        """Check whether a document is in the protected (read-only) list."""
+        return Path(doc_source).name in self.protected_docs
 
     def pending_summary(self) -> str:
         """Human-readable summary of staged corrections."""
@@ -212,7 +221,24 @@ class KnowledgeUpdaterAgent:
                     "Run `python run_sync.py && python run_index.py` first."
                 )
 
-            best_hit = hits[0]
+            # Filter out protected (read-only) docs — fall through to next best
+            editable_hits = [
+                h for h in hits
+                if Path(h["source"]).name not in self.protected_docs
+            ]
+
+            if not editable_hits:
+                protected_names = ", ".join(
+                    f"`{Path(h['source']).name}`" for h in hits
+                )
+                return (
+                    f"The best matching doc(s) ({protected_names}) are **protected "
+                    f"reference files** and cannot be edited.\n\n"
+                    f"If the information is wrong in a feature doc that references "
+                    f"these, please point me to the specific feature doc instead."
+                )
+
+            best_hit = editable_hits[0]
             doc_source = best_hit["source"]
             log.info("Best matching document: %s (score: %.2f)", doc_source, best_hit["score"])
 
