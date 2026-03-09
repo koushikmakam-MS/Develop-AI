@@ -151,6 +151,52 @@ class DocIndexer:
         log.info("Indexing complete: %s", summary)
         return summary
 
+    def index_file(self, file_path: Path) -> int:
+        """
+        Index (or re-index) a single markdown file.
+
+        Returns the number of chunks indexed.
+        """
+        file_path = Path(file_path)
+        if not file_path.is_file():
+            log.warning("File does not exist: %s", file_path)
+            return 0
+
+        rel_path = str(file_path.relative_to(self.docs_dir))
+        file_hash = _file_hash(file_path)
+
+        # Remove old chunks for this file
+        existing = self.collection.get(
+            where={"source": rel_path},
+            include=["metadatas"],
+        )
+        if existing and existing["ids"]:
+            self.collection.delete(ids=existing["ids"])
+
+        text = file_path.read_text(encoding="utf-8", errors="replace")
+        chunks = _chunk_text(text, self.chunk_size, self.chunk_overlap)
+        if not chunks:
+            return 0
+
+        ids = [f"{rel_path}::chunk_{i}" for i in range(len(chunks))]
+        metadatas = [
+            {
+                "source": rel_path,
+                "file_hash": file_hash,
+                "chunk_index": i,
+                "total_chunks": len(chunks),
+            }
+            for i in range(len(chunks))
+        ]
+
+        self.collection.upsert(
+            ids=ids,
+            documents=chunks,
+            metadatas=metadatas,
+        )
+        log.info("Indexed single file %s → %d chunks", rel_path, len(chunks))
+        return len(chunks)
+
     def search(self, query: str, top_k: int = 5) -> List[Dict[str, Any]]:
         """
         Semantic search over indexed docs.

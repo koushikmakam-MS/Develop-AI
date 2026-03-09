@@ -385,3 +385,141 @@ class TestProtectedDocs:
         assert "staged" in result.lower() or "correction" in result.lower()
         assert updater.pending_count == 1
         assert "Feature_BackupPolicy.md" in updater._pending_corrections[0]["doc_source"]
+
+
+# ── New Document Creation ────────────────────────────────────────────────
+
+class TestNewDocCreation:
+    """Verify that the agent creates new docs when no matching doc exists."""
+
+    @pytest.fixture
+    def updater_cfg(self, tmp_path):
+        docs = tmp_path / "docs" / "agentKT"
+        docs.mkdir(parents=True)
+        return {
+            "llm": {"model": "m", "endpoint": "e", "api_key": "k", "max_tokens": 4096},
+            "vectorstore": {"persist_directory": ".chromadb", "collection_name": "c",
+                            "embedding_model": "all-MiniLM-L6-v2", "chunk_size": 1000,
+                            "chunk_overlap": 200},
+            "paths": {"docs_dir": str(docs), "repo_clone_dir": str(tmp_path / ".repo")},
+            "azure_devops": {"repo_url": "https://x", "branch": "main",
+                             "sync_paths": ["docs/agentKT"], "pat": "fake"},
+            "protected_docs": ["BackupMgmt_Architecture_Memory.md"],
+        }
+
+    @pytest.fixture
+    def updater(self, updater_cfg):
+        with patch("brain_ai.agents.knowledge_updater_agent.LLMClient"), \
+             patch("brain_ai.agents.knowledge_updater_agent.DocIndexer"), \
+             patch("brain_ai.agents.knowledge_updater_agent.AzureDevOpsPR"):
+            from brain_ai.agents.knowledge_updater_agent import KnowledgeUpdaterAgent
+            return KnowledgeUpdaterAgent(updater_cfg)
+
+    def test_no_hits_offers_new_doc(self, updater):
+        """When no search hits, the agent should offer to create a new doc."""
+        updater.indexer.search = MagicMock(return_value=[])
+        updater._extract_correction = MagicMock(return_value={
+            "is_correction": True,
+            "correction": "The new retry feature uses circuit breaker pattern",
+            "search_query": "retry circuit breaker",
+        })
+
+        result = updater.handle("The retry uses circuit breaker pattern", [])
+        assert "create doc" in result.lower() or "new document" in result.lower()
+        assert updater._pending_new_doc is not None
+        assert updater._pending_new_doc["topic"] == "retry circuit breaker"
+
+    def test_only_protected_hits_offers_new_doc(self, updater):
+        """When all hits are protected, the agent should offer to create a new doc."""
+        updater.indexer.search = MagicMock(return_value=[
+            {"source": "BackupMgmt_Architecture_Memory.md",
+             "score": 0.90, "text": "arch overview"},
+        ])
+        updater._extract_correction = MagicMock(return_value={
+            "is_correction": True,
+            "correction": "The architecture now includes circuit breaker",
+            "search_query": "architecture circuit breaker",
+        })
+
+        result = updater.handle("The arch has circuit breaker now", [])
+        assert "create doc" in result.lower()
+        assert "protected" in result.lower()
+        assert updater._pending_new_doc is not None
+
+    def test_is_create_doc_request_true(self, updater):
+        updater._pending_new_doc = {"topic": "x", "correction": "y", "search_query": "z"}
+        assert updater._is_create_doc_request("create doc")
+        assert updater._is_create_doc_request("Yes, create a doc please")
+        assert updater._is_create_doc_request("new doc")
+
+    def test_is_create_doc_request_false_without_pending(self, updater):
+        updater._pending_new_doc = None
+        assert not updater._is_create_doc_request("create doc")
+
+    def test_create_doc_generates_file(self, updater, tmp_path):
+        """Full flow: no hit → offer → user says 'create doc' → file created."""
+        updater._pending_new_doc = {
+            "topic": "retry circuit breaker",
+            "correction": "The new retry feature uses circuit breaker pattern with 3 retries",
+            "search_query": "retry circuit breaker",
+        }
+        updater.llm.generate = MagicMock(side_effect=[
+            "# Feature: Retry Circuit Breaker\n\n> **Purpose**: Circuit breaker for retries.\n",
+            '{"filename": "Feature_RetryCircuitBreaker.md", "folder": "DPP"}',
+        ])
+        updater.indexer.index_file = MagicMock(return_value=3)
+
+        result = updater.handle("create doc", [])
+        assert "new document created" in result.lower()
+        assert updater.pending_count == 1
+        assert updater._pending_new_doc is None
+
+        # Verify file was written
+        doc_path = Path(updater.local_docs_dir) / "DPP" / "Feature_RetryCircuitBreaker.md"
+        assert doc_path.exists()
+        content = doc_path.read_text()
+        assert "Circuit Breaker" in content
+
+    def test_create_doc_root_folder(self, updater, tmp_path):
+        """When folder is empty, doc is placed in the root docs dir."""
+        updater._pending_new_doc = {
+            "topic": "cross cutting concern",
+            "correction": "General info about error handling patterns",
+            "search_query": "error handling patterns",
+        }
+        updater.llm.generate = MagicMock(side_effect=[
+            "# Feature: Error Handling Patterns\n\nGeneral error handling.\n",
+            '{"filename": "Feature_ErrorHandling.md", "folder": ""}',
+        ])
+        updater.indexer.index_file = MagicMock(return_value=2)
+
+        result = updater.handle("create doc", [])
+        assert "new document created" in result.lower()
+
+        doc_path = Path(updater.local_docs_dir) / "Feature_ErrorHandling.md"
+        assert doc_path.exists()
+
+    def test_suggest_filename_fallback(self, updater):
+        """If LLM returns garbage, fallback produces a valid filename."""
+        updater.llm.generate = MagicMock(return_value="not valid json at all")
+        filename, folder = updater._suggest_doc_filename("backup retry logic")
+        assert filename.endswith(".md")
+        assert "Backup" in filename or "backup" in filename.lower()
+        assert folder in ("DPP", "RSV", "")
+
+    def test_pending_new_doc_cleared_after_create(self, updater):
+        """After creating a new doc, _pending_new_doc should be None."""
+        updater._pending_new_doc = {
+            "topic": "test topic",
+            "correction": "test content",
+            "search_query": "test",
+        }
+        updater.llm.generate = MagicMock(side_effect=[
+            "# Test Doc\n\nContent.\n",
+            '{"filename": "Feature_Test.md", "folder": ""}',
+        ])
+        updater.indexer.index_file = MagicMock(return_value=1)
+
+        updater.handle("create doc", [])
+        assert updater._pending_new_doc is None
+        assert updater.pending_count == 1

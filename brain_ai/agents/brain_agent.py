@@ -191,6 +191,9 @@ class BrainAgent:
         ):
             agent_name = "knowledge_updater"
             log.info("Fast-path to knowledge_updater (pending corrections + submit/discard keyword).")
+        elif updater and updater._pending_new_doc and updater._is_create_doc_request(message):
+            agent_name = "knowledge_updater"
+            log.info("Fast-path to knowledge_updater (pending new-doc + create-doc keyword).")
         else:
             agent_name = self._route(message)
 

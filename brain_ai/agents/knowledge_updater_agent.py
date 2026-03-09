@@ -98,6 +98,87 @@ Corrections:
 
 Return ONLY the summary text, nothing else."""
 
+NEW_DOC_PROMPT = """You are creating a NEW documentation file for the Azure Backup Management project.
+
+The user has provided information about a topic that has no existing documentation.
+
+## User's Information
+{user_info}
+
+## Conversation Context
+{history_context}
+
+## Instructions
+Create a comprehensive markdown documentation file following this template structure:
+
+# Feature: <Feature Name>
+
+> **Purpose**: One-line description.
+
+---
+
+## 1. Overview
+High-level description of the feature.
+
+## 2. Key Components
+Main classes, controllers, or modules involved.
+
+## 3. Request/Response Flow
+Step-by-step code path (if applicable).
+
+## 4. Business Logic & Validation
+Key rules, state checks, error conditions.
+
+## 5. Telemetry & Logging
+Relevant OpStats, trace events.
+
+## 6. Debugging Patterns & KQL Queries
+Concrete KQL queries for common debug scenarios.
+
+## 7. Error Handling
+Common error codes, retry logic, failure modes.
+
+## 8. Related Features
+Cross-references to other feature docs.
+
+---
+
+Rules:
+- Fill in every section you have information for based on the user's input.
+- For sections where you lack information, add a placeholder:
+  > _TODO: This section needs additional information._
+- Use proper Markdown formatting.
+- Return ONLY the full document — no code fences, no preamble.
+"""
+
+FILENAME_PROMPT = """Based on this topic, suggest a documentation filename.
+
+Topic: {topic}
+
+Rules:
+- Use the format Feature_<Name>.md (e.g., Feature_BackupPolicy.md)
+- Use PascalCase with underscores between words
+- Keep it concise (2-4 words max)
+- If it's clearly a DPP feature (Data Protection Platform, DppWeb*), prefix with nothing (file goes in DPP/)
+- If it's clearly an RSV feature (Recovery Services Vault, BMS*, ProtectedItems), prefix with nothing (file goes in RSV/)
+
+Respond in EXACTLY this JSON format (no other text):
+{{
+  "filename": "Feature_BackupRetry.md",
+  "folder": "DPP"
+}}
+
+Valid folders: "DPP", "RSV", or "" (root agentKT folder for cross-cutting topics).
+"""
+
+# Keywords that signal the user wants to create a new doc
+CREATE_DOC_KEYWORDS = [
+    "create doc", "create a doc", "create document", "new doc",
+    "add doc", "add a doc", "draft doc", "draft a doc",
+    "write doc", "write a doc", "create the doc",
+    "yes create", "make a doc", "start a doc",
+]
+
 # Keywords that signal the user wants to submit the pending corrections
 SUBMIT_KEYWORDS = [
     "agree", "submit", "create pr", "create the pr", "push it",
@@ -140,6 +221,10 @@ class KnowledgeUpdaterAgent:
         # Each entry: {doc_source, repo_path, correction, summary, new_content}
         self._pending_corrections: List[Dict[str, str]] = []
 
+        # Pending new-doc creation context (set when no matching doc found)
+        # {topic, correction, search_query}
+        self._pending_new_doc: Optional[Dict[str, str]] = None
+
         log.info("KnowledgeUpdaterAgent ready (protected_docs=%s).", self.protected_docs)
 
     # ── Public API ───────────────────────────────────────────
@@ -152,6 +237,10 @@ class KnowledgeUpdaterAgent:
         1. **Correction mode**: user provides a correction -> extract, apply, stage locally.
         2. **Submit mode**: user says "agree" / "submit" -> create one PR for all staged corrections.
         """
+        # Check if the user wants to create a new doc (from a previous offer)
+        if self._is_create_doc_request(message):
+            return self._create_new_document(message, conversation_history)
+
         # Check if the user wants to discard pending corrections
         if self._is_discard_request(message):
             return self._discard_pending_corrections()
@@ -214,28 +303,43 @@ class KnowledgeUpdaterAgent:
 
             # Step 2: Find relevant document
             hits = self.indexer.search(search_query, top_k=3)
-            if not hits:
-                return (
-                    "I couldn't find a relevant document to update. "
-                    "The documentation index might be empty. "
-                    "Run `python run_sync.py && python run_index.py` first."
-                )
 
-            # Filter out protected (read-only) docs — fall through to next best
+            # Filter out protected (read-only) docs
             editable_hits = [
                 h for h in hits
                 if Path(h["source"]).name not in self.protected_docs
-            ]
+            ] if hits else []
 
+            # No editable doc found — offer to create a new one
             if not editable_hits:
-                protected_names = ", ".join(
-                    f"`{Path(h['source']).name}`" for h in hits
-                )
+                self._pending_new_doc = {
+                    "topic": search_query,
+                    "correction": correction,
+                    "search_query": search_query,
+                }
+                log.info("No editable doc found for '%s' — offering new doc creation.", search_query)
+
+                if hits and not editable_hits:
+                    # All hits were protected
+                    protected_names = ", ".join(
+                        f"`{Path(h['source']).name}`" for h in hits
+                    )
+                    reason = (
+                        f"The best matching doc(s) ({protected_names}) are **protected "
+                        f"reference files** and cannot be edited."
+                    )
+                else:
+                    reason = (
+                        "I couldn't find an existing document that matches this topic."
+                    )
+
                 return (
-                    f"The best matching doc(s) ({protected_names}) are **protected "
-                    f"reference files** and cannot be edited.\n\n"
-                    f"If the information is wrong in a feature doc that references "
-                    f"these, please point me to the specific feature doc instead."
+                    f"{reason}\n\n"
+                    f"📄 Would you like me to **create a new document** for this topic?\n\n"
+                    f"**Topic:** {search_query}\n"
+                    f"**Content:** {correction[:200]}{'...' if len(correction) > 200 else ''}\n\n"
+                    f'Say **"create doc"** to generate a new documentation file, '
+                    f"or point me to a specific existing doc to update."
                 )
 
             best_hit = editable_hits[0]
@@ -298,6 +402,159 @@ class KnowledgeUpdaterAgent:
             return f"I understood your correction but hit an error: **{e}**"
 
     # ── Private: submit / PR creation ────────────────────────
+
+    def _is_create_doc_request(self, message: str) -> bool:
+        """Check if the user message is a request to create a new document."""
+        if not self._pending_new_doc:
+            return False
+        msg_lower = message.strip().lower()
+        return any(kw in msg_lower for kw in CREATE_DOC_KEYWORDS)
+
+    def _create_new_document(
+        self, message: str, history: List[Dict] | None
+    ) -> str:
+        """Generate a new documentation file from the pending new-doc context."""
+        if not self._pending_new_doc:
+            return "There's no pending new-doc request. Provide a correction first."
+
+        try:
+            topic = self._pending_new_doc["topic"]
+            correction = self._pending_new_doc["correction"]
+
+            # Build history context
+            history_context = ""
+            if history:
+                recent = history[-10:]
+                for msg in recent:
+                    role = msg.get("role", "unknown")
+                    content = msg.get("content", "")[:600]
+                    history_context += f"**{role}:** {content}\n\n"
+
+            # Step 1: Generate the doc content
+            prompt = NEW_DOC_PROMPT.format(
+                user_info=correction,
+                history_context=history_context,
+            )
+            new_content = self.llm.generate(
+                message=prompt,
+                system=SYSTEM_PROMPT,
+                history=None,
+            )
+            # Strip code fences the LLM might add
+            new_content = new_content.strip()
+            if new_content.startswith("```markdown"):
+                new_content = new_content[len("```markdown"):].strip()
+            if new_content.startswith("```"):
+                new_content = new_content[3:].strip()
+            if new_content.endswith("```"):
+                new_content = new_content[:-3].strip()
+
+            if not new_content:
+                return "I couldn't generate content for the new document. Please try again."
+
+            # Step 2: Suggest filename + folder
+            filename, folder = self._suggest_doc_filename(topic)
+
+            # Step 3: Save locally and stage for PR
+            doc_source, repo_path = self._save_new_document(
+                filename, folder, new_content
+            )
+
+            summary = f"New doc: {filename}"
+
+            # Stage the new doc as a pending correction
+            self._pending_corrections.append({
+                "doc_source": doc_source,
+                "repo_path": repo_path,
+                "correction": f"New document for: {topic}",
+                "summary": summary,
+                "new_content": new_content,
+            })
+
+            # Clear the pending new-doc context
+            self._pending_new_doc = None
+
+            return (
+                f"📄 **New document created** (#{self.pending_count})\n\n"
+                f"**File:** `{doc_source}`\n"
+                f"**Folder:** `{folder or 'root'}`\n\n"
+                f"I've saved it locally and indexed it.\n\n"
+                f"📋 **Pending changes ({self.pending_count}):**\n"
+                f"{self.pending_summary()}\n\n"
+                f"You can:\n"
+                f"- Review & provide more corrections\n"
+                f'- Say **"submit"** to create a PR with all changes'
+            )
+
+        except Exception as e:
+            log.error("New doc creation failed: %s", e, exc_info=True)
+            return f"Failed to create the new document: **{e}**"
+
+    def _suggest_doc_filename(self, topic: str) -> tuple[str, str]:
+        """Use LLM to suggest a filename and folder for a new doc.
+
+        Returns (filename, folder) e.g. ("Feature_BackupRetry.md", "DPP").
+        """
+        prompt = FILENAME_PROMPT.format(topic=topic)
+        raw = self.llm.generate(
+            message=prompt,
+            system="You suggest documentation filenames.",
+            history=None,
+        )
+
+        try:
+            json_match = re.search(r"\{[^{}]+\}", raw, re.DOTALL)
+            if json_match:
+                result = json.loads(json_match.group())
+                filename = result.get("filename", "Feature_NewTopic.md")
+                folder = result.get("folder", "")
+                # Sanitize
+                filename = re.sub(r'[^\w\-.]', '_', filename)
+                if not filename.endswith(".md"):
+                    filename += ".md"
+                if folder not in ("DPP", "RSV", ""):
+                    folder = ""
+                return filename, folder
+        except Exception as e:
+            log.warning("Failed to parse filename suggestion: %s", e)
+
+        # Fallback: derive from topic
+        safe_name = re.sub(r'[^\w]+', '_', topic.title())[:40].strip('_')
+        return f"Feature_{safe_name}.md", ""
+
+    def _save_new_document(
+        self, filename: str, folder: str, content: str
+    ) -> tuple[str, str]:
+        """Write a new doc file locally and return (doc_source, repo_path)."""
+        # Build local path
+        if folder:
+            local_dir = self.local_docs_dir / folder
+        else:
+            local_dir = self.local_docs_dir
+        local_dir.mkdir(parents=True, exist_ok=True)
+
+        local_path = local_dir / filename
+        local_path.write_text(content, encoding="utf-8")
+        log.info("Saved new document: %s", local_path)
+
+        # Build repo-relative path
+        doc_source = f"{folder}/{filename}" if folder else filename
+        repo_path = None
+        for sp in self.sync_paths:
+            candidate = f"{sp}/{doc_source}".replace("\\", "/")
+            repo_path = candidate
+            break
+        if not repo_path:
+            repo_path = f"docs/agentKT/{doc_source}"
+
+        # Re-index so the new doc is immediately searchable
+        try:
+            self.indexer.index_file(local_path)
+            log.info("Indexed new document: %s", local_path)
+        except Exception as e:
+            log.warning("Could not index new doc (will be indexed on next run_index): %s", e)
+
+        return doc_source, repo_path
 
     def _is_submit_request(self, message: str) -> bool:
         """Check if the user message is a request to submit pending corrections."""
