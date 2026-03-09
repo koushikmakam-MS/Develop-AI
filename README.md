@@ -363,7 +363,26 @@ The script will:
 
 ### Option B: Step-by-Step Setup
 
-#### 1. Install dependencies
+#### 1. Create & activate a virtual environment
+
+```powershell
+# PowerShell (Windows)
+python -m venv .venv
+& .\.venv\Scripts\Activate.ps1
+```
+
+```bash
+# Bash (Linux / Mac / WSL)
+python3 -m venv .venv
+source .venv/bin/activate
+```
+
+> **Important:** You must activate the venv every time you open a new terminal.
+> You'll know it's active when you see `(.venv)` at the start of your prompt.
+> All commands below (`pip install`, `python run_chat.py`, etc.) must be run
+> inside the activated venv.
+
+#### 2. Install dependencies
 
 ```bash
 pip install -r requirements.txt
@@ -371,7 +390,7 @@ pip install -r requirements.txt
 pip install -e .
 ```
 
-#### 2. Configure
+#### 3. Configure
 
 ```bash
 cp config.yaml.template config.yaml               # Generic settings (safe to commit)
@@ -382,21 +401,21 @@ cp config.local.yaml.template config.local.yaml     # Secrets (gitignored)
 #   - Kusto cluster URL & database
 ```
 
-#### 3. Sync docs from Azure DevOps
+#### 4. Sync docs from Azure DevOps
 
 ```bash
 python run_sync.py          # Incremental sync
 python run_sync.py --force  # Force full sync
 ```
 
-#### 4. Index docs into ChromaDB
+#### 5. Index docs into ChromaDB
 
 ```bash
 python run_index.py          # Incremental
 python run_index.py --force  # Force re-index
 ```
 
-#### 5. Index source code (for Coder Agent)
+#### 6. Index source code (for Coder Agent)
 
 ```bash
 python run_code_index.py          # Incremental
@@ -406,7 +425,7 @@ python run_code_index.py --force  # Force re-index
 This indexes `.cs`, `.py`, `.json`, `.config` files from the BMS repo
 into a separate ChromaDB collection so the Coder Agent can trace code paths.
 
-#### 6. Start chatting
+#### 7. Start chatting
 
 ```bash
 python run_chat.py
