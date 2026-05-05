@@ -23,6 +23,7 @@ from pathlib import Path
 
 from brain_ai.config import get_config
 from brain_ai.vectorstore.code_indexer import CodeIndexer
+from brain_ai.hive.discovery_store import DiscoveryStore
 
 logging.basicConfig(
     level=logging.INFO,
@@ -91,6 +92,21 @@ def index_hive(global_cfg: dict, hive_name: str, hive_def: dict, force: bool = F
         result["chunks_after"] = after_count
 
         print(f"   ✅ Done in {elapsed:.1f}s — {after_count} chunks total")
+
+        # Record in discovery store
+        try:
+            ds = DiscoveryStore()
+            ds.update_index_metadata(
+                hive_name=hive_name,
+                index_type="code",
+                chunks=after_count,
+                display_name=display_name,
+                duration_s=round(elapsed, 1),
+            )
+            ds.close()
+        except Exception as ds_err:
+            log.warning("Could not update discovery store: %s", ds_err)
+
         return result
 
     except Exception as e:
@@ -134,6 +150,8 @@ def main():
     parser.add_argument("--force", action="store_true", help="Force re-index all files")
     parser.add_argument("--hive", type=str, default=None, help="Index only this hive")
     parser.add_argument("--list", action="store_true", help="List all hives and exit")
+    parser.add_argument("--refresh-topics", action="store_true",
+                        help="Auto-extract topics from indexed content after indexing")
     parser.add_argument("--config", type=str, default=None, help="Path to config.yaml")
     args = parser.parse_args()
 
@@ -180,6 +198,31 @@ def main():
             print(f"  ❌ {r['hive']}: error — {r.get('error', '?')}")
         else:
             print(f"  ✅ {r['hive']}: {r.get('chunks_after', '?')} chunks ({r.get('elapsed_seconds', '?')}s)")
+
+    # Auto-extract topics if requested
+    if args.refresh_topics:
+        print(f"\n🔄 Refreshing topics for indexed hives...")
+        try:
+            from brain_ai.hive.topic_extractor import TopicExtractor
+            extractor = TopicExtractor(cfg)
+            for name in hives_to_index:
+                hdef = hives_to_index[name]
+                display = hdef.get("display_name", name)
+                desc = hdef.get("description", "")
+                docs_col = hdef.get("vectorstore", {}).get("collection_name")
+                code_col = hdef.get("code_index", {}).get("collection_name")
+                print(f"  Extracting topics for {name}...", end=" ", flush=True)
+                topics = extractor.extract_topics(
+                    hive_name=name,
+                    display_name=display,
+                    description=desc,
+                    docs_collection_name=docs_col,
+                    code_collection_name=code_col,
+                )
+                print(f"→ {len(topics)} topics")
+        except Exception as e:
+            log.error("Topic extraction failed: %s", e)
+            print(f"  ❌ Topic extraction error: {e}")
 
     print()
 

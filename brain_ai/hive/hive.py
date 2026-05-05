@@ -45,7 +45,8 @@ class Hive:
         self.scope: Dict[str, Any] = hive_cfg.get("scope", {})
 
         # Topics this hive handles (used by router for classification)
-        self.topics: List[str] = self.scope.get("topics", [])
+        # Merge: config.yaml topics (base) + auto-extracted topics from discovery store
+        self.topics: List[str] = self._load_topics(self.scope.get("topics", []))
         self.kusto_tables: List[str] = self.scope.get("kusto_tables", [])
 
         # Build a merged config: global config + hive overrides
@@ -145,6 +146,36 @@ class Hive:
         return {"target_hive": target, "context": context}
 
     # ── Scope matching ──────────────────────────────────────────────
+
+    def _load_topics(self, config_topics: List[str]) -> List[str]:
+        """Merge config.yaml topics with auto-extracted topics from discovery store.
+
+        Priority: config topics (always kept) + discovery store auto-topics.
+        Duplicates are removed, config topics come first.
+        """
+        try:
+            from brain_ai.hive.discovery_store import DiscoveryStore
+            ds = DiscoveryStore()
+            auto_topics = ds.get_topics(self.name, source="auto")
+            ds.close()
+        except Exception:
+            auto_topics = []
+
+        # Merge: config first (as base), then auto-extracted (deduplicated)
+        seen = {t.lower() for t in config_topics}
+        merged = list(config_topics)
+        for t in auto_topics:
+            if t.lower() not in seen:
+                merged.append(t)
+                seen.add(t.lower())
+
+        if auto_topics:
+            log.info(
+                "Hive '%s' topics: %d from config + %d auto-extracted = %d total",
+                self.name, len(config_topics), len(auto_topics), len(merged),
+            )
+
+        return merged
 
     def matches_topic(self, query: str) -> float:
         """Return a simple keyword overlap score (0.0–1.0) for quick hive matching.

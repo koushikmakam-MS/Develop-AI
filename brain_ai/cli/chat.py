@@ -68,6 +68,7 @@ Welcome! I can help you with:
 - `/code`    - Check code index status
 - `/pending` - Show staged doc corrections
 - `/hives`   - List available hives & their scopes
+- `/status`  - Show hive index status, staleness & topic counts
 - `/logs`    - Toggle verbose logging on/off (for testing)
 - `/quit`    - Exit
 
@@ -314,6 +315,38 @@ def _handle_command(command: str, brain: BrainAgent | HiveRouter) -> bool:
             )
         return True
 
+    if cmd == "/status":
+        try:
+            from brain_ai.hive.discovery_store import DiscoveryStore
+            ds = DiscoveryStore()
+            all_meta = ds.get_all_metadata()
+            stale = ds.get_stale_hives()
+            stale_names = {s["hive_name"] for s in stale}
+
+            if not all_meta:
+                console.print("[dim]No index metadata yet. Run an index to populate.[/dim]")
+            else:
+                console.print("\n[bold]📊 Hive Index Status:[/bold]")
+                for m in all_meta:
+                    name = m["hive_name"]
+                    code_chunks = m.get("code_chunks", 0)
+                    doc_chunks = m.get("doc_chunks", 0)
+                    last_code = m.get("last_code_index", "never")
+                    if last_code and last_code != "never":
+                        last_code = last_code[:19].replace("T", " ")
+                    marker = " [yellow]⚠️ stale[/yellow]" if name in stale_names else " [green]✓[/green]"
+                    topics = ds.get_topics(name)
+                    topic_count = len(topics)
+                    console.print(
+                        f"  [bold]{name}[/bold]{marker}\n"
+                        f"    Code: {code_chunks:,} chunks | Docs: {doc_chunks:,} chunks\n"
+                        f"    Last indexed: {last_code} | Topics: {topic_count}"
+                    )
+            ds.close()
+        except Exception as e:
+            console.print(f"[red]Status error: {e}[/red]")
+        return True
+
     return False
 
 
@@ -354,6 +387,23 @@ def run_chat(config_path: Optional[str] = None):
             console.print("[dim]🐝 Hive mode active — "
                           f"{len(brain.registry)} hive(s): "
                           f"{', '.join(brain.registry.names)}[/dim]")
+            # Check for stale hives
+            try:
+                from brain_ai.hive.discovery_store import DiscoveryStore
+                ds = DiscoveryStore()
+                stale = ds.get_stale_hives()
+                ds.close()
+                if stale:
+                    for s in stale:
+                        reason = s.get("reason", "unknown")
+                        console.print(
+                            f"  [yellow]⚠️  {s['hive_name']}: {reason}[/yellow]"
+                        )
+                    console.print(
+                        "[dim]  Run: python scripts/run_hive_index.py --hive <name> --force[/dim]"
+                    )
+            except Exception:
+                pass  # Discovery store not yet initialized — that's fine
         else:
             brain = BrainAgent(cfg)
     except Exception as e:
