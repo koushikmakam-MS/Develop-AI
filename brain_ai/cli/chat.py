@@ -10,6 +10,8 @@ Provides a rich terminal chat experience with:
 
 import logging
 import sys
+from datetime import datetime
+from pathlib import Path
 from typing import Optional
 
 from prompt_toolkit import prompt
@@ -69,6 +71,7 @@ Welcome! I can help you with:
 - `/pending` - Show staged doc corrections
 - `/hives`   - List available hives & their scopes
 - `/status`  - Show hive index status, staleness & topic counts
+- `/save`    - Save last response as rich Markdown (with Mermaid routing diagram)
 - `/logs`    - Toggle verbose logging on/off (for testing)
 - `/quit`    - Exit
 
@@ -88,14 +91,39 @@ def _get_updater(brain: BrainAgent | HiveRouter):
 
 
 def _print_routing_diagram(result: dict):
-    """Show a visual routing diagram when cross-hive work happened."""
+    """Show a visual routing diagram with Gateway routing info."""
     hive = result.get("hive")
     consulted = result.get("consulted_hives", [])
     chain = result.get("delegation_chain", [])
     agent = result.get("agent", "brain")
+    routing = result.get("routing", {})
 
-    # Only show diagram when there's cross-hive activity
-    if not hive or (not consulted and not chain):
+    if not hive:
+        return
+
+    # Always show at least a compact routing line
+    hive_color = HIVE_COLORS.get(hive, "white")
+    method = routing.get("method", "?")
+    confidence = routing.get("confidence", 0)
+    conf_style = "green" if confidence >= 0.7 else "yellow" if confidence >= 0.4 else "red"
+
+    # Compact routing summary
+    route_text = Text()
+    route_text.append("🔀 Gateway → ", style="bold cyan")
+    route_text.append(f"{hive.upper()}", style=f"bold {hive_color}")
+    route_text.append(f"  [{method}, ", style="dim")
+    route_text.append(f"{confidence:.0%}", style=conf_style)
+    route_text.append(" confidence]", style="dim")
+
+    # Show matched topics if any
+    matched = routing.get("matched_topics", {}).get(hive, [])
+    if matched:
+        route_text.append(f"  matched: {', '.join(matched[:3])}", style="dim")
+
+    console.print(route_text)
+
+    # Show full tree only for cross-hive activity
+    if not consulted and not chain:
         return
 
     tree = Tree(
@@ -315,6 +343,9 @@ def _handle_command(command: str, brain: BrainAgent | HiveRouter) -> bool:
             )
         return True
 
+    if cmd.startswith("/save"):
+        return _handle_save(cmd, brain)
+
     if cmd == "/status":
         try:
             from brain_ai.hive.discovery_store import DiscoveryStore
@@ -348,6 +379,126 @@ def _handle_command(command: str, brain: BrainAgent | HiveRouter) -> bool:
         return True
 
     return False
+
+
+# ── Module-level state for /save ──────────────────────────────────
+_last_question: Optional[str] = None
+_last_result: Optional[dict] = None
+
+
+def _build_mermaid(result: dict) -> str:
+    """Build a Mermaid flowchart from routing result."""
+    hive = result.get("hive", "unknown")
+    agent = result.get("agent", "brain")
+    consulted = result.get("consulted_hives", [])
+    chain = result.get("delegation_chain", [])
+
+    lines = ["```mermaid", "flowchart TD"]
+    lines.append('    Q["📨 User Question"]')
+    lines.append('    R["🔀 HiveRouter"]')
+    lines.append(f'    P["{hive.upper()} 🐝<br/>{agent} agent"]')
+    lines.append("    Q --> R")
+    lines.append("    R -->|primary| P")
+
+    for i, hop in enumerate(chain):
+        node = f"D{i}"
+        lines.append(f'    {node}["{hop.upper()} 🔗<br/>delegated"]')
+        lines.append(f"    R -->|delegate| {node}")
+
+    for i, c in enumerate(consulted):
+        node = f"C{i}"
+        lines.append(f'    {node}["{c.upper()} 🐝<br/>consulted"]')
+        lines.append(f"    R -->|consult| {node}")
+
+    all_sources = ["P"] + [f"D{i}" for i in range(len(chain))] + [f"C{i}" for i in range(len(consulted))]
+    if len(all_sources) > 1:
+        lines.append('    S["✨ Synthesized Response"]')
+        for src in all_sources:
+            lines.append(f"    {src} --> S")
+
+    lines.append("```")
+    return "\n".join(lines)
+
+
+def _handle_save(cmd: str, brain) -> bool:
+    """Save the last response as a rich Markdown file."""
+    global _last_question, _last_result
+
+    if _last_result is None:
+        console.print("[dim]Nothing to save yet — ask a question first.[/dim]")
+        return True
+
+    # Determine output path
+    parts = cmd.split(maxsplit=1)
+    if len(parts) > 1:
+        out_path = Path(parts[1].strip())
+    else:
+        save_dir = Path("saved_responses")
+        save_dir.mkdir(exist_ok=True)
+        ts = datetime.now().strftime("%Y%m%d_%H%M%S")
+        hive = _last_result.get("hive", "unknown")
+        out_path = save_dir / f"{hive}_{ts}.md"
+
+    result = _last_result
+    hive = result.get("hive", "unknown")
+    agent = result.get("agent", "unknown")
+    consulted = result.get("consulted_hives", [])
+    chain = result.get("delegation_chain", [])
+    response = result.get("response", "")
+    now = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+
+    md_lines = [
+        f"# 🐝 BrainAI Response — {hive.upper()}",
+        "",
+        "## Metadata",
+        "",
+        f"| Field | Value |",
+        f"| --- | --- |",
+        f"| **Date** | {now} |",
+        f"| **Primary Hive** | {hive} |",
+        f"| **Agent** | {agent} |",
+    ]
+    routing = result.get("routing", {})
+    if routing:
+        md_lines.append(f"| **Routing Method** | {routing.get('method', '?')} |")
+        md_lines.append(f"| **Confidence** | {routing.get('confidence', 0):.0%} |")
+        matched = routing.get("matched_topics", {}).get(hive, [])
+        if matched:
+            md_lines.append(f"| **Matched Topics** | {', '.join(matched[:5])} |")
+    if chain:
+        md_lines.append(f"| **Delegated To** | {', '.join(chain)} |")
+    if consulted:
+        md_lines.append(f"| **Consulted Hives** | {', '.join(consulted)} |")
+
+    md_lines += [
+        "",
+        "## Question",
+        "",
+        f"> {_last_question}",
+        "",
+    ]
+
+    # Add Mermaid routing diagram if cross-hive
+    if consulted or chain:
+        md_lines += [
+            "## Routing Flow",
+            "",
+            _build_mermaid(result),
+            "",
+        ]
+
+    md_lines += [
+        "## Response",
+        "",
+        response,
+        "",
+        "---",
+        f"*Generated by BrainAI — {len(consulted) + len(chain) + 1} hive(s) involved*",
+    ]
+
+    out_path.write_text("\n".join(md_lines), encoding="utf-8")
+    console.print(f"[green]💾 Saved to {out_path}[/green]")
+    return True
 
 
 def run_chat(config_path: Optional[str] = None):
@@ -432,6 +583,11 @@ def run_chat(config_path: Optional[str] = None):
             # Send to brain agent / hive router
             with console.status("[bold green]Thinking...[/bold green]", spinner="dots"):
                 result = brain.chat(user_input)
+
+            # Track for /save
+            global _last_question, _last_result
+            _last_question = user_input
+            _last_result = result
 
             _print_routing_diagram(result)
             _print_response(result["agent"], result["response"], result.get("hive"))

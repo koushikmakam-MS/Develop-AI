@@ -73,6 +73,9 @@ def _global_cfg():
                             "RSV",
                             "backup policies",
                             "restore operations",
+                            "backup job",
+                            "backup failure",
+                            "UserError",
                         ],
                         "kusto_tables": [
                             "OperationStatsLocalAllClusters",
@@ -177,7 +180,7 @@ class TestHive:
         assert hive.display_name == "Backup Management Service"
         assert "backup management" in hive.topics
         assert "DPP" in hive.topics
-        assert len(hive.topics) == 5
+        assert len(hive.topics) == 8
         assert "OperationStatsLocalAllClusters" in hive.kusto_tables
 
     @patch("brain_ai.agents.brain_agent.KnowledgeAgent")
@@ -935,13 +938,15 @@ class TestEndToEndScenario:
             }
         )
 
-        # Mock the LLM for both routing and synthesis
+        # Mock the LLM for both routing (tiebreaker) and synthesis
         call_count = [0]
 
         def mock_generate(**kwargs):
             call_count[0] += 1
             msg = kwargs.get("message", "")
-            if "HIVE:" in kwargs.get("system", ""):
+            sys = kwargs.get("system", "")
+            # Gateway LLM tiebreaker
+            if "routing classifier" in sys.lower() or "HIVE:" in sys:
                 return "HIVE:bms"
             # Synthesis call
             return (

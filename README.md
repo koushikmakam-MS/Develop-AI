@@ -1,6 +1,6 @@
 # 🧠 BCDR DeveloperAI - Azure Backup Management AI Assistant
 
-Multi-agent **Hive Architecture** powered by Azure AI Foundry (GPT-4o) — a network of 7 domain-specialized agent clusters that collaborate across BCDR service boundaries. Each hive has its own BrainAgent, docs, code index, and vector collections. Connects to Azure DevOps documentation and Kusto for intelligent project assistance and debugging. Optionally extends to Microsoft Teams as a bot.
+Multi-agent **Hive Architecture** powered by Azure AI Foundry (GPT-4o) — a network of 9 domain-specialized agent clusters that collaborate across BCDR service boundaries. A **Gateway Agent** performs two-stage routing (fast topic matching → LLM tiebreaker) for accurate domain classification. Each hive has its own BrainAgent, docs, code index, and vector collections. A **Discovery Store** (SQLite) auto-extracts routing topics from indexed content to keep routing fresh. Connects to Azure DevOps documentation and Kusto for intelligent project assistance and debugging. Optionally extends to Microsoft Teams as a bot.
 
 ## 🐝 Agent Hive Architecture
 
@@ -8,10 +8,13 @@ The system uses a **Hive Architecture** — a network of domain-specialized agen
 
 ### Key Features
 
+- **Gateway Agent** — two-stage routing: fast topic keyword match (zero LLM cost) → LLM tiebreaker only when ambiguous
+- **Discovery Store** — SQLite-backed auto-topic extraction from indexed content, freshness tracking, staleness warnings
 - **Config-driven hives** — each hive defined in `config.yaml` → `hives.definitions`
 - **Proactive cross-hive discovery** — the router analyzes primary responses for cross-service references and automatically fans out targeted sub-questions to other hives
 - **Explicit delegation** — agents can emit `[DELEGATE:<hive>]` signals when they detect cross-domain needs
 - **Multi-hive synthesis** — responses from multiple services are unified into a single end-to-end flow
+- **`/save` command** — export any response as rich Markdown with Mermaid routing diagrams and metadata
 - **Backward compatible** — set `hives.enabled: false` to use the classic single-BrainAgent mode
 
 ### Concept
@@ -116,7 +119,9 @@ graph TB
 
 | Layer | Role | Details |
 |-------|------|---------|
-| **Top-Level Router** | Intent classification & hive selection | Analyzes the user's question, determines which domain is involved, and dispatches to the primary hive. |
+| **Gateway Agent** | Two-stage routing | Stage 1: scores all hives via topic keyword matching (exact phrase = 3pts, partial word = 1.5pts). If one hive wins by 2× margin → routes directly (zero LLM cost). Stage 2: LLM tiebreaker with only the top 4 candidates for ambiguous queries. |
+| **Discovery Store** | Auto-topic extraction & freshness | SQLite DB tracks per-hive index metadata, auto-extracted topics (via LLM sampling of ChromaDB content), and staleness. Topics are merged with config.yaml at hive init. |
+| **Top-Level Router** | Cross-hive orchestration | Dispatches to the Gateway-selected hive, handles delegation signals, triggers proactive discovery, and synthesizes multi-hive responses. |
 | **Hive Brain** | Domain-local orchestrator | Each hive has its own Brain Agent that routes internally to its Knowledge, Debug, and Coder agents — scoped to that domain's docs, code, and Kusto tables. |
 | **Proactive Discovery** | Automatic cross-service consultation | After getting the primary answer, the router analyzes it for references to other services and fans out targeted sub-questions to those hives automatically. |
 | **Cross-Hive Delegation** | Agent-to-agent signals | Agents can emit `[DELEGATE:<hive>] <context>` when they detect the answer requires another domain. The router intercepts and orchestrates. |
@@ -155,16 +160,50 @@ graph TB
 - **The router never does domain work** — it only classifies, dispatches, and synthesizes
 - **Backward compatible** — today's single-hive BMS setup becomes one node in the larger network
 
-### New Files
+### Key Files
 
 | File | Purpose |
 |------|---------|
-| `brain_ai/hive/__init__.py` | Hive package exports |
+| `brain_ai/hive/gateway.py` | `Gateway` — two-stage routing (topic match → LLM tiebreaker) |
 | `brain_ai/hive/hive.py` | `Hive` class — self-contained domain agent cluster |
 | `brain_ai/hive/registry.py` | `HiveRegistry` — holds all hive instances |
-| `brain_ai/hive/router.py` | `HiveRouter` — top-level routing, discovery, synthesis |
-| `scripts/run_hive_index.py` | Index code for all hives into separate ChromaDB collections |
-| `tests/test_hive.py` | 42 unit tests for the hive architecture |
+| `brain_ai/hive/router.py` | `HiveRouter` — orchestration, discovery, synthesis |
+| `brain_ai/hive/discovery_store.py` | `DiscoveryStore` — SQLite metadata, topics, freshness |
+| `brain_ai/hive/topic_extractor.py` | `TopicExtractor` — LLM-based topic extraction from indexed content |
+| `brain_ai/cli/main.py` | Unified CLI (`brainai chat`, `status`, `gateway-test`, etc.) |
+| `brain_ai/cli/chat.py` | Rich interactive chat with `/save`, `/status`, routing diagrams |
+| `scripts/run_hive_index.py` | Index code for all hives with `--refresh-topics` support |
+| `tests/test_hive.py` | 188 unit tests for the hive architecture |
+
+### Quick Start
+
+```bash
+# Install
+pip install -e .
+
+# Start interactive chat (with Gateway routing & Rich color output)
+brainai chat
+
+# Show hive index status, topic counts & staleness
+brainai status
+
+# Test gateway routing with sample questions
+brainai gateway-test
+
+# Index all hives (or a specific one)
+brainai hive-index
+brainai hive-index --hive dpp
+
+# Auto-extract routing topics from indexed content
+brainai hive-index --refresh-topics
+
+# Chat commands
+/hives          # List all 9 hives & topics
+/status         # Index status & staleness
+/save           # Save last response as Markdown with Mermaid diagram
+/save out.md    # Save to a specific file
+/help           # All commands
+```
 
 ---
 

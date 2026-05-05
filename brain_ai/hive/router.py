@@ -16,6 +16,7 @@ import logging
 import re
 from typing import Any, Dict, List, Optional, Tuple
 
+from brain_ai.hive.gateway import Gateway
 from brain_ai.hive.hive import Hive
 from brain_ai.hive.registry import HiveRegistry
 from brain_ai.llm_client import LLMClient
@@ -144,6 +145,13 @@ class HiveRouter:
         # Build the hive registry
         self.registry = HiveRegistry(cfg)
 
+        # Gateway agent for two-stage routing
+        self.gateway = Gateway(
+            registry=self.registry,
+            llm=self.llm,
+            default_hive=self.registry.default_hive_name,
+        )
+
         # Conversation history for routing context
         self._conversation_history: List[Dict[str, str]] = []
         self._last_hive: Optional[str] = None
@@ -174,8 +182,9 @@ class HiveRouter:
             dict with keys: hive, agent, response
             (and optionally: delegated_to, delegation_chain, consulted_hives)
         """
-        # Step 1: Route to a hive
-        hive_name = self._route_to_hive(message)
+        # Step 1: Route to a hive (via Gateway)
+        routing = self._route_to_hive(message)
+        hive_name = routing["hive"]
         hive = self.registry.get(hive_name)
 
         if hive is None:
@@ -191,7 +200,11 @@ class HiveRouter:
                 }
             hive_name = hive.name
 
-        log.info("Routed to hive: %s (%s)", hive_name, hive.display_name)
+        log.info(
+            "Routed to hive: %s (%s) via %s [confidence=%.2f]",
+            hive_name, hive.display_name,
+            routing.get("method", "?"), routing.get("confidence", 0),
+        )
 
         # Step 2: Dispatch to the hive
         result = hive.chat(message)
@@ -218,6 +231,14 @@ class HiveRouter:
 
         self._last_hive = result["hive"]
 
+        # Attach routing metadata
+        result["routing"] = {
+            "method": routing.get("method"),
+            "confidence": routing.get("confidence"),
+            "scores": routing.get("scores"),
+            "matched_topics": routing.get("matched_topics"),
+        }
+
         return result
 
     def reset_conversation(self):
@@ -230,79 +251,27 @@ class HiveRouter:
 
     # ── Routing ─────────────────────────────────────────────────────
 
-    def _route_to_hive(self, message: str) -> str:
-        """Use LLM to classify which hive should handle the message."""
-        # If only one hive, skip LLM call
+    def _route_to_hive(self, message: str) -> Dict[str, Any]:
+        """Use the Gateway agent for two-stage routing.
+
+        Returns a dict with hive name plus routing metadata
+        (confidence, method, scores, matched_topics).
+        """
+        # If only one hive, skip routing
         if len(self.registry) == 1:
-            return self.registry.names[0]
+            return {
+                "hive": self.registry.names[0],
+                "confidence": 1.0,
+                "method": "single_hive",
+                "scores": {},
+                "matched_topics": {},
+            }
 
-        try:
-            # Build routing history (compact)
-            routing_history: List[Dict[str, str]] = []
-            if self._last_hive:
-                routing_history.append({
-                    "role": "system",
-                    "content": (
-                        f"[CONTEXT: The MOST RECENT turn was handled by the "
-                        f"'{self._last_hive}' hive. If the user is following up, "
-                        f"route to '{self._last_hive}'.]"
-                    ),
-                })
-            for msg in self._conversation_history[-10:]:
-                content = msg["content"]
-                if len(content) > 200:
-                    content = content[:200] + "...(truncated)"
-                routing_history.append({"role": msg["role"], "content": content})
-
-            # Build state context
-            state_lines = []
-            for hive in self.registry:
-                updater = hive.brain._agents.get("knowledge_updater")
-                if updater and updater.pending_count > 0:
-                    state_lines.append(
-                        f"STATE: Hive '{hive.name}' has {updater.pending_count} "
-                        f"pending doc correction(s)."
-                    )
-            state_context = "\n".join(state_lines) if state_lines else ""
-
-            system_prompt = HIVE_ROUTER_SYSTEM_PROMPT.format(
-                hive_scope_summary=self.registry.scope_summary(),
-                default_hive=self.registry.default_hive_name,
-                state_context=state_context,
-            )
-
-            text = self.llm.generate(
-                message=message,
-                system=system_prompt,
-                history=routing_history,
-            ).strip()
-
-            # Parse hive name from various LLM response formats:
-            #   HIVE:bms  |  Hive: protection  |  [Hive: common]  |  hive:bms
-            import re
-            m = re.search(r'\[?\s*hive\s*:\s*(\w+)\s*\]?', text, re.IGNORECASE)
-            if m:
-                hive_name = m.group(1).strip().lower()
-                if hive_name in self.registry:
-                    return hive_name
-                log.warning(
-                    "Router selected unknown hive '%s', falling back to default.",
-                    hive_name,
-                )
-            else:
-                # Last-resort: check if the response IS a known hive name
-                candidate = text.strip().lower()
-                if candidate in self.registry:
-                    return candidate
-                log.warning(
-                    "Router returned unexpected format: '%s', defaulting to '%s'.",
-                    text,
-                    self.registry.default_hive_name,
-                )
-        except Exception as e:
-            log.error("Hive routing error: %s, using default hive.", e)
-
-        return self.registry.default_hive_name
+        return self.gateway.route(
+            message=message,
+            last_hive=self._last_hive,
+            conversation_history=self._conversation_history,
+        )
 
     # ── Proactive cross-hive discovery ───────────────────────────────
 

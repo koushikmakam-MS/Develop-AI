@@ -8,6 +8,8 @@ Consolidates all run_*.py scripts into one entry point:
     brainai index         — Index markdown docs into ChromaDB
     brainai code-index    — Index source code into ChromaDB
     brainai hive-index    — Index code for all configured hives
+    brainai status        — Show hive index status, topics & staleness
+    brainai gateway-test  — Test gateway routing with sample questions
     brainai sync          — Sync docs from Azure DevOps repo
     brainai daily         — Run daily sync + index cycle
     brainai kusto-server  — Start the Kusto MCP server
@@ -167,6 +169,30 @@ def cmd_hive_index(args):
     total = time.time() - total_start
     print(f"\n🐝 Done — {len(results)} hive(s) in {total:.1f}s")
 
+    # Auto-extract topics if requested
+    if getattr(args, "refresh_topics", False):
+        print("\n🔄 Refreshing topics for indexed hives...")
+        try:
+            from brain_ai.hive.topic_extractor import TopicExtractor
+            extractor = TopicExtractor(cfg)
+            for name in hives_to_index:
+                hdef = hives_to_index[name]
+                display = hdef.get("display_name", name)
+                desc = hdef.get("description", "")
+                docs_col = hdef.get("vectorstore", {}).get("collection_name")
+                code_col = hdef.get("code_index", {}).get("collection_name")
+                print(f"  Extracting topics for {name}...", end=" ", flush=True)
+                topics = extractor.extract_topics(
+                    hive_name=name,
+                    display_name=display,
+                    description=desc,
+                    docs_collection_name=docs_col,
+                    code_collection_name=code_col,
+                )
+                print(f"→ {len(topics)} topics")
+        except Exception as e:
+            print(f"  ❌ Topic extraction error: {e}")
+
 
 def cmd_sync(args):
     """Sync docs from Azure DevOps repo."""
@@ -257,6 +283,80 @@ def cmd_doc_improver(args):
     print(json.dumps(result, indent=2, default=str))
 
 
+def cmd_status(args):
+    """Show hive index status, topic counts, and staleness."""
+    from brain_ai.hive.discovery_store import DiscoveryStore
+    ds = DiscoveryStore()
+    all_meta = ds.get_all_metadata()
+    stale = ds.get_stale_hives()
+    stale_names = {s["hive_name"] for s in stale}
+
+    if not all_meta:
+        print("No index metadata yet. Run: brainai hive-index")
+        return
+
+    print("\n\U0001f41d BrainAI \u2014 Hive Status")
+    print("=" * 70)
+    total_code = total_docs = total_topics = 0
+    for m in all_meta:
+        name = m["hive_name"]
+        code = m.get("code_chunks", 0)
+        docs = m.get("doc_chunks", 0)
+        topics = ds.get_topics(name)
+        last = (m.get("last_code_index") or "never")[:19].replace("T", " ")
+        marker = " \u26a0\ufe0f  STALE" if name in stale_names else " \u2713"
+        total_code += code
+        total_docs += docs
+        total_topics += len(topics)
+        print(f"  {name:<12s}{marker}")
+        print(f"    Code: {code:>7,} chunks | Docs: {docs:>5,} chunks | Topics: {len(topics):>3}")
+        print(f"    Last indexed: {last}")
+
+    print(f"\n  {'TOTAL':<12s}")
+    print(f"    Code: {total_code:>7,} chunks | Docs: {total_docs:>5,} chunks | Topics: {total_topics:>3}")
+    if stale:
+        print(f"\n  \u26a0\ufe0f  {len(stale)} stale hive(s) \u2014 run: brainai hive-index")
+    print()
+    ds.close()
+
+
+def cmd_gateway_test(args):
+    """Run gateway routing test with sample questions."""
+    from brain_ai.config import get_config
+    from brain_ai.hive.registry import HiveRegistry
+    from brain_ai.llm_client import LLMClient
+    from brain_ai.hive.gateway import Gateway
+
+    cfg = get_config(args.config)
+    reg = HiveRegistry(cfg)
+    llm = LLMClient(cfg)
+    gw = Gateway(reg, llm, cfg.get("hives", {}).get("default_hive", "dpp"))
+
+    tests = [
+        "How does cross-region restore work?",
+        "What are protection containers?",
+        "How does PIT Catalog manage recovery points?",
+        "Explain snapshot coordination",
+        "What common utilities exist for serialization?",
+        "How does datamover transfer data?",
+        "What monitoring alerts fire on backup failure?",
+        "How does the regional RP handle geo-redundancy?",
+        "What is a backup vault?",
+        "How do backup policies work?",
+    ]
+
+    print("\n\U0001f500 Gateway Routing Test")
+    print("=" * 100)
+    print(f"{'Question':<55} {'Hive':<12} {'Method':<18} {'Conf':>5}  Matched")
+    print("-" * 100)
+    for q in tests:
+        r = gw.route(q)
+        matched = r["matched_topics"].get(r["hive"], [])
+        m_str = ", ".join(matched[:2]) if matched else ""
+        print(f"{q:<55} {r['hive']:<12} {r['method']:<18} {r['confidence']:>4.0%}  {m_str}")
+    print()
+
+
 # ── CLI definition ──────────────────────────────────────────────
 
 def main():
@@ -289,8 +389,18 @@ def main():
     p.add_argument("--force", action="store_true")
     p.add_argument("--hive", type=str, default=None, help="Index only this hive")
     p.add_argument("--list", action="store_true", help="List hives and exit")
+    p.add_argument("--refresh-topics", action="store_true", help="Auto-extract routing topics after indexing")
     p.add_argument("--config", type=str, default=None)
     p.set_defaults(func=cmd_hive_index)
+
+    # status
+    p = sub.add_parser("status", help="Show hive index status, topics & staleness")
+    p.set_defaults(func=cmd_status)
+
+    # gateway-test
+    p = sub.add_parser("gateway-test", help="Test gateway routing with sample questions")
+    p.add_argument("--config", type=str, default=None)
+    p.set_defaults(func=cmd_gateway_test)
 
     # sync
     p = sub.add_parser("sync", help="Sync docs from Azure DevOps")
