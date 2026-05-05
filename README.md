@@ -1,8 +1,141 @@
 # 🧠 BCDR DeveloperAI - Azure Backup Management AI Assistant
 
-Multi-agent CLI assistant powered by Azure AI Foundry (GPT-4o) that connects to your Azure DevOps documentation and Kusto for intelligent project assistance and debugging. Optionally extends to Microsoft Teams as a bot.
+Multi-agent **Hive Architecture** powered by Azure AI Foundry (GPT-4o) — a network of 7 domain-specialized agent clusters that collaborate across BCDR service boundaries. Each hive has its own BrainAgent, docs, code index, and vector collections. Connects to Azure DevOps documentation and Kusto for intelligent project assistance and debugging. Optionally extends to Microsoft Teams as a bot.
 
-## Architecture
+## 🐝 Agent Hive Architecture
+
+The system uses a **Hive Architecture** — a network of domain-specialized agent clusters ("hives") that collaborate across team boundaries to solve complex, cross-cutting issues. Each hive is a self-contained domain with its own BrainAgent, docs, code index, and vector collections.
+
+### Key Features
+
+- **Config-driven hives** — each hive defined in `config.yaml` → `hives.definitions`
+- **Proactive cross-hive discovery** — the router analyzes primary responses for cross-service references and automatically fans out targeted sub-questions to other hives
+- **Explicit delegation** — agents can emit `[DELEGATE:<hive>]` signals when they detect cross-domain needs
+- **Multi-hive synthesis** — responses from multiple services are unified into a single end-to-end flow
+- **Backward compatible** — set `hives.enabled: false` to use the classic single-BrainAgent mode
+
+### Concept
+
+```mermaid
+graph TB
+    subgraph Gateway["🌐 Gateway Layer"]
+        Router["🧭 Top-Level Router Agent<br/><i>Intent classification · Hive selection<br/>Cross-hive orchestration</i>"]
+    end
+
+    subgraph BMS_Hive["🐝 BMS Hive<br/><i>Backup Management Service</i>"]
+        BMS_Brain["🧠 BMS Brain"]
+        BMS_Know["📚 Knowledge"]
+        BMS_Debug["🔍 Debug"]
+        BMS_Code["💻 Coder"]
+        BMS_Doc["📝 Doc Improver"]
+        BMS_Brain --> BMS_Know
+        BMS_Brain --> BMS_Debug
+        BMS_Brain --> BMS_Code
+        BMS_Brain --> BMS_Doc
+    end
+
+    subgraph Common_Hive["🐝 Common Hive<br/><i>Shared Libraries & Infra</i>"]
+        COM_Brain["🧠 Common Brain"]
+        COM_Know["📚 Knowledge"]
+        COM_Debug["🔍 Debug"]
+        COM_Code["💻 Coder"]
+        COM_Brain --> COM_Know
+        COM_Brain --> COM_Debug
+        COM_Brain --> COM_Code
+    end
+
+    subgraph Core_Hive["🐝 Core Hive<br/><i>Core Platform Services</i>"]
+        CORE_Brain["🧠 Core Brain"]
+        CORE_Know["📚 Knowledge"]
+        CORE_Debug["🔍 Debug"]
+        CORE_Code["💻 Coder"]
+        CORE_Brain --> CORE_Know
+        CORE_Brain --> CORE_Debug
+        CORE_Brain --> CORE_Code
+    end
+
+    subgraph Prot_Hive["🐝 Protection Hive<br/><i>Protection & Workload Agents</i>"]
+        PROT_Brain["🧠 Protection Brain"]
+        PROT_Know["📚 Knowledge"]
+        PROT_Debug["🔍 Debug"]
+        PROT_Code["💻 Coder"]
+        PROT_Brain --> PROT_Know
+        PROT_Brain --> PROT_Debug
+        PROT_Brain --> PROT_Code
+    end
+
+    Router --> BMS_Brain
+    Router --> COM_Brain
+    Router --> CORE_Brain
+    Router --> PROT_Brain
+
+    BMS_Brain <-. "cross-hive<br/>collaboration" .-> COM_Brain
+    BMS_Brain <-. "cross-hive<br/>collaboration" .-> CORE_Brain
+    COM_Brain <-. "cross-hive<br/>collaboration" .-> CORE_Brain
+    CORE_Brain <-. "cross-hive<br/>collaboration" .-> PROT_Brain
+
+    style Gateway fill:#fff3e0,stroke:#e65100,color:#000
+    style BMS_Hive fill:#e3f2fd,stroke:#1565c0,color:#000
+    style Common_Hive fill:#e8f5e9,stroke:#2e7d32,color:#000
+    style Core_Hive fill:#f3e5f5,stroke:#6a1b9a,color:#000
+    style Prot_Hive fill:#fce4ec,stroke:#b71c1c,color:#000
+```
+
+### How It Works
+
+| Layer | Role | Details |
+|-------|------|---------|
+| **Top-Level Router** | Intent classification & hive selection | Analyzes the user's question, determines which domain is involved, and dispatches to the primary hive. |
+| **Hive Brain** | Domain-local orchestrator | Each hive has its own Brain Agent that routes internally to its Knowledge, Debug, and Coder agents — scoped to that domain's docs, code, and Kusto tables. |
+| **Proactive Discovery** | Automatic cross-service consultation | After getting the primary answer, the router analyzes it for references to other services and fans out targeted sub-questions to those hives automatically. |
+| **Cross-Hive Delegation** | Agent-to-agent signals | Agents can emit `[DELEGATE:<hive>] <context>` when they detect the answer requires another domain. The router intercepts and orchestrates. |
+| **Multi-Hive Synthesis** | Unified response | All responses are synthesized into a single end-to-end flow with cross-service interactions clearly documented. |
+
+### Active Hives (7 domains)
+
+| Hive | Domain | Code Repo | Agents |
+|------|--------|-----------|--------|
+| **bms** ⭐ | Backup Management Service | `.repo_cache` (BMS main) | knowledge, debug, coder, knowledge_updater |
+| **dataplane** | Backup Data Plane | `Mgmt-RecoverySvcs-BackupDataPlane` | knowledge, debug, coder |
+| **common** | Common Libraries & Infrastructure | `Mgmt-RecoverySvcs-Common` | knowledge, coder |
+| **protection** | Workload Coordination & Protection | `Mgmt-RecoverySvcs-WkloadCoord` | knowledge, debug, coder |
+| **regional** | Regional RP & PIT Catalog | `Mgmt-RecoverySvcs-RegionalRP` | knowledge, coder |
+| **datamover** | Data Mover Service | `Mgmt-RecoverySvcs-DataMover` | knowledge, coder |
+| **monitoring** | Monitoring & Alerting | `Mgmt-RecoverySvcs-Monitoring` | knowledge, debug, coder |
+
+### Cross-Hive Scenario
+
+> **User:** _"A backup job for SQL on Azure VM failed with error code `UserErrorVmNotFound`. The job ID is `abc-123`. What went wrong?"_
+>
+> 1. **Router** → classifies as BMS + Protection concern → dispatches to **BMS Hive**
+> 2. **BMS Debug Agent** → queries Kusto, finds the job failed during VM snapshot phase, error originates from Protection layer
+> 3. **BMS Brain** → recognizes cross-hive dependency → delegates to **Protection Hive**
+> 4. **Protection Debug Agent** → queries workload-specific Kusto tables, finds the VM was deallocated at snapshot time
+> 5. **Protection Brain** → also checks **Common Hive** for SDK retry behavior
+> 6. **Router** → synthesizes all findings: _"The backup failed because the VM was deallocated. The Protection agent attempted 3 retries (Common SDK retry policy) but the VM never came back online. Actionable fix: ensure VM is running or configure pre-backup scripts."_
+
+### Design Principles
+
+- **Each hive is self-contained** — own ChromaDB collections, own Kusto table scope, own doc set
+- **Hives are independently deployable** — a team can spin up their own hive and register it with the router
+- **Cross-hive protocol is message-based** — hives communicate via structured requests/responses, not shared memory
+- **The router never does domain work** — it only classifies, dispatches, and synthesizes
+- **Backward compatible** — today's single-hive BMS setup becomes one node in the larger network
+
+### New Files
+
+| File | Purpose |
+|------|---------|
+| `brain_ai/hive/__init__.py` | Hive package exports |
+| `brain_ai/hive/hive.py` | `Hive` class — self-contained domain agent cluster |
+| `brain_ai/hive/registry.py` | `HiveRegistry` — holds all hive instances |
+| `brain_ai/hive/router.py` | `HiveRouter` — top-level routing, discovery, synthesis |
+| `scripts/run_hive_index.py` | Index code for all hives into separate ChromaDB collections |
+| `tests/test_hive.py` | 42 unit tests for the hive architecture |
+
+---
+
+## Brain Agent Architecture
 
 ```mermaid
 graph TB
@@ -147,7 +280,7 @@ The Doc Improver runs on a schedule, reading source code and comparing it agains
 flowchart LR
     subgraph Trigger["⏰ Trigger"]
         Sched["Schedule<br/><i>every 72h</i>"]
-        Manual["Manual<br/><i>run_doc_improver.py</i>"]
+        Manual["Manual<br/><i>scripts/run_doc_improver.py</i>"]
     end
 
     subgraph Analyze["🔬 Analysis Loop"]
@@ -379,7 +512,7 @@ source .venv/bin/activate
 
 > **Important:** You must activate the venv every time you open a new terminal.
 > You'll know it's active when you see `(.venv)` at the start of your prompt.
-> All commands below (`pip install`, `python run_chat.py`, etc.) must be run
+> All commands below (`pip install`, `python scripts/run_chat.py`, etc.) must be run
 > inside the activated venv.
 
 #### 2. Install dependencies
@@ -404,22 +537,22 @@ cp config.local.yaml.template config.local.yaml     # Secrets (gitignored)
 #### 4. Sync docs from Azure DevOps
 
 ```bash
-python run_sync.py          # Incremental sync
-python run_sync.py --force  # Force full sync
+python scripts/run_sync.py          # Incremental sync
+python scripts/run_sync.py --force  # Force full sync
 ```
 
 #### 5. Index docs into ChromaDB
 
 ```bash
-python run_index.py          # Incremental
-python run_index.py --force  # Force re-index
+python scripts/run_index.py          # Incremental
+python scripts/run_index.py --force  # Force re-index
 ```
 
 #### 6. Index source code (for Coder Agent)
 
 ```bash
-python run_code_index.py          # Incremental
-python run_code_index.py --force  # Force re-index
+python scripts/run_code_index.py          # Incremental
+python scripts/run_code_index.py --force  # Force re-index
 ```
 
 This indexes `.cs`, `.py`, `.json`, `.config` files from the BMS repo
@@ -428,7 +561,7 @@ into a separate ChromaDB collection so the Coder Agent can trace code paths.
 #### 7. Start chatting
 
 ```bash
-python run_chat.py
+python scripts/run_chat.py
 ```
 
 This is the **primary interface** for BCDR DeveloperAI. `run_chat.py` runs **automatic pre-flight checks** before launching the chat:
@@ -444,15 +577,15 @@ This is the **primary interface** for BCDR DeveloperAI. `run_chat.py` runs **aut
 **Options:**
 
 ```bash
-python run_chat.py --no-kusto          # Skip auto-starting Kusto MCP server
-python run_chat.py --config my.yaml    # Use a custom config file
+python scripts/run_chat.py --no-kusto          # Skip auto-starting Kusto MCP server
+python scripts/run_chat.py --config my.yaml    # Use a custom config file
 ```
 
 You can also run the Kusto MCP server **standalone** (e.g., for other tools):
 
 ```bash
-python run_kusto_server.py              # default port 8701
-python run_kusto_server.py --port 8701  # custom port
+python scripts/run_kusto_server.py              # default port 8701
+python scripts/run_kusto_server.py --port 8701  # custom port
 ```
 
 ## CLI Commands
@@ -473,10 +606,10 @@ Run `run_daily.py` via cron or Windows Task Scheduler to keep both docs and sour
 
 ```bash
 # Linux/Mac cron (daily at 2 AM)
-0 2 * * * cd /path/to/BCDR_devai && python run_daily.py >> daily_sync.log 2>&1
+0 2 * * * cd /path/to/BCDR_devai && python scripts/run_daily.py >> daily_sync.log 2>&1
 
 # Or run manually
-python run_daily.py
+python scripts/run_daily.py
 ```
 
 ## Agent Overview
@@ -537,12 +670,17 @@ BCDR-DeveloperAI/
 │   │   ├── indexer.py           # ChromaDB document indexer
 │   │   └── code_indexer.py      # ChromaDB source code indexer
 │   ├── agents/
-│   │   ├── brain_agent.py       # Router/orchestrator
+│   │   ├── brain_agent.py       # Router/orchestrator (+ hive context support)
 │   │   ├── knowledge_agent.py   # RAG-based Q&A over docs
 │   │   ├── debug_agent.py       # Kusto debug agent
 │   │   ├── coder_agent.py       # Code path tracing agent
 │   │   ├── knowledge_updater_agent.py  # Doc correction & PR agent
 │   │   └── doc_improver_agent.py       # Background doc improvement agent
+│   ├── hive/                    # 🐝 Agent Hive Architecture
+│   │   ├── __init__.py          # Package exports
+│   │   ├── hive.py              # Hive — self-contained domain agent cluster
+│   │   ├── registry.py          # HiveRegistry — holds all hive instances
+│   │   └── router.py            # HiveRouter — top-level routing & synthesis
 │   ├── kusto/
 │   │   ├── client.py            # Kusto MCP client
 │   │   └── server.py            # Kusto MCP server (FastAPI)
@@ -567,14 +705,16 @@ BCDR-DeveloperAI/
 ├── config.local.yaml.template   # Template for secrets
 ├── pyproject.toml               # Package config & dependencies
 ├── requirements.txt             # Pip requirements
-├── run_chat.py                  # CLI chat entry point
-├── run_bot.py                   # Teams Bot entry point
-├── run_sync.py                  # Sync docs entry point
-├── run_index.py                 # Index docs entry point
-├── run_code_index.py            # Index source code entry point
-├── run_daily.py                 # Daily sync+index automation
-├── run_kusto_server.py          # Kusto MCP server entry point
-├── run_doc_improver.py          # Doc Improver entry point
+├── scripts/
+│   ├── run_chat.py              # CLI chat entry point
+│   ├── run_bot.py               # Teams Bot entry point
+│   ├── run_sync.py              # Sync docs entry point
+│   ├── run_index.py             # Index docs entry point
+│   ├── run_code_index.py        # Index source code entry point
+│   ├── run_daily.py             # Daily sync+index automation
+│   ├── run_kusto_server.py      # Kusto MCP server entry point
+│   ├── run_doc_improver.py      # Doc Improver entry point
+│   └── run_hive_index.py        # 🐝 Hive code indexer entry point
 ├── setup.ps1                    # One-command setup (PowerShell)
 └── setup.sh                     # One-command setup (Bash)
 ```
@@ -789,6 +929,8 @@ az containerapp update --name BCDR-devai-bot \
 
 ## Future Roadmap
 
+### ✅ Completed
+
 - [x] Coder Agent — code path tracing over indexed BMS source
 - [x] Knowledge Updater Agent — session-based doc corrections with batch Azure DevOps PRs
 - [x] KQL query sanitization — auto-strips `.project` commands & scoping prefixes
@@ -796,115 +938,37 @@ az containerapp update --name BCDR-devai-bot \
 - [x] Docker containerization for deployment
 - [x] Azure Container Apps deployment (Bicep IaC)
 - [x] Doc Improver Agent — background auto-improvement of docs from code analysis
-- [ ] Azure Key Vault for secrets management
-- [ ] **Agent Hive Architecture** — domain-specialized agent swarms with cross-hive collaboration _(see below)_
-- [ ] **More agents planned** — CI/CD pipeline agent, PR review agent, incident triage agent, and others will be added as the platform matures. The plug-in architecture makes it easy to extend (see [Adding New Agents](#adding-new-agents)).
+- [x] **Agent Hive Architecture** — 7-domain multi-hive routing with proactive cross-hive discovery _(see below)_
 
----
+### 🔜 Next Up
 
-## 🐝 Future Vision: Agent Hive Architecture
+- [ ] **GitHub Copilot CLI Extension** — expose BrainAI as a `@bcdr` Copilot Chat participant so developers can query directly from VS Code / GitHub Copilot CLI (`gh copilot ask @bcdr "how does soft delete work?"`)
+- [ ] **Copilot Agent Mode integration** — register as a [Copilot Extension](https://docs.github.com/en/copilot/building-copilot-extensions) so the hive architecture is available as a Copilot skill across IDE, CLI, and GitHub.com
+- [ ] **Hosted service deployment** — deploy as a shared service (Azure Container Apps + API gateway) so any BCDR team member can use it without local setup. SSO via Azure AD, rate-limited per user.
+- [ ] **Web UI dashboard** — React/Next.js frontend with hive visualization, conversation history, and admin panel for managing hives, indexing, and docs
+- [ ] **Azure Key Vault for secrets management** — replace `config.local.yaml` with Key Vault references for production deployments
 
-The current system has a single Brain Agent routing to a flat set of sub-agents. The next evolution is a **Hive Architecture** — a network of domain-specialized agent clusters ("hives") that collaborate across team boundaries to solve complex, cross-cutting issues.
+### 🧠 Intelligence Improvements
 
-### Concept
+- [ ] **Hive auto-indexing pipeline** — Azure DevOps pipeline that triggers re-indexing when code is merged to main (webhook → `run_hive_index.py --hive <changed_repo>`)
+- [ ] **Smart deep mode** — auto-detect when a question is cross-cutting vs. single-domain and skip the discovery step for simple follow-ups (reduce latency by 60%)
+- [ ] **Confidence-based routing** — combine LLM routing with embedding similarity scores from each hive's vector store for more accurate hive selection
+- [ ] **Conversation memory across sessions** — persist conversation history to a database so users can resume investigations across days
+- [ ] **Learning from corrections** — when Knowledge Updater fixes docs, feed corrections back into the embedding index automatically
 
-```mermaid
-graph TB
-    subgraph Gateway["🌐 Gateway Layer"]
-        Router["🧭 Top-Level Router Agent<br/><i>Intent classification · Hive selection<br/>Cross-hive orchestration</i>"]
-    end
+### 🤖 New Agents
 
-    subgraph BMS_Hive["🐝 BMS Hive<br/><i>Backup Management Service</i>"]
-        BMS_Brain["🧠 BMS Brain"]
-        BMS_Know["📚 Knowledge"]
-        BMS_Debug["🔍 Debug"]
-        BMS_Code["💻 Coder"]
-        BMS_Doc["📝 Doc Improver"]
-        BMS_Brain --> BMS_Know
-        BMS_Brain --> BMS_Debug
-        BMS_Brain --> BMS_Code
-        BMS_Brain --> BMS_Doc
-    end
+- [ ] **CI/CD Pipeline Agent** — diagnose build failures, analyze pipeline logs, suggest fixes for broken deployments
+- [ ] **PR Review Agent** — auto-review pull requests against architecture docs and coding standards, flag deviations
+- [ ] **Incident Triage Agent** — integrate with IcM/ServiceNow, correlate incidents with Kusto telemetry, suggest root cause and mitigation
+- [ ] **Test Gap Agent** — analyze code changes and suggest missing test cases based on modified code paths
+- [ ] **Onboarding Agent** — guided walkthrough for new team members, generates personalized learning paths based on their assigned area
 
-    subgraph Common_Hive["🐝 Common Hive<br/><i>Shared Libraries & Infra</i>"]
-        COM_Brain["🧠 Common Brain"]
-        COM_Know["📚 Knowledge"]
-        COM_Debug["🔍 Debug"]
-        COM_Code["💻 Coder"]
-        COM_Brain --> COM_Know
-        COM_Brain --> COM_Debug
-        COM_Brain --> COM_Code
-    end
+### 🏗️ Platform & Scale
 
-    subgraph Core_Hive["🐝 Core Hive<br/><i>Core Platform Services</i>"]
-        CORE_Brain["🧠 Core Brain"]
-        CORE_Know["📚 Knowledge"]
-        CORE_Debug["🔍 Debug"]
-        CORE_Code["💻 Coder"]
-        CORE_Brain --> CORE_Know
-        CORE_Brain --> CORE_Debug
-        CORE_Brain --> CORE_Code
-    end
-
-    subgraph Prot_Hive["🐝 Protection Hive<br/><i>Protection & Workload Agents</i>"]
-        PROT_Brain["🧠 Protection Brain"]
-        PROT_Know["📚 Knowledge"]
-        PROT_Debug["🔍 Debug"]
-        PROT_Code["💻 Coder"]
-        PROT_Brain --> PROT_Know
-        PROT_Brain --> PROT_Debug
-        PROT_Brain --> PROT_Code
-    end
-
-    Router --> BMS_Brain
-    Router --> COM_Brain
-    Router --> CORE_Brain
-    Router --> PROT_Brain
-
-    BMS_Brain <-. "cross-hive<br/>collaboration" .-> COM_Brain
-    BMS_Brain <-. "cross-hive<br/>collaboration" .-> CORE_Brain
-    COM_Brain <-. "cross-hive<br/>collaboration" .-> CORE_Brain
-    CORE_Brain <-. "cross-hive<br/>collaboration" .-> PROT_Brain
-
-    style Gateway fill:#fff3e0,stroke:#e65100,color:#000
-    style BMS_Hive fill:#e3f2fd,stroke:#1565c0,color:#000
-    style Common_Hive fill:#e8f5e9,stroke:#2e7d32,color:#000
-    style Core_Hive fill:#f3e5f5,stroke:#6a1b9a,color:#000
-    style Prot_Hive fill:#fce4ec,stroke:#b71c1c,color:#000
-```
-
-### How It Works
-
-| Layer | Role | Details |
-|-------|------|---------|
-| **Top-Level Router** | Intent classification & hive selection | Analyzes the user's question, determines which domain(s) are involved, and dispatches to one or more hives. Orchestrates multi-hive conversations for cross-cutting issues. |
-| **Hive Brain** | Domain-local orchestrator | Each hive has its own Brain Agent that routes internally to its Knowledge, Debug, Coder, and Doc Improver agents — scoped to that domain's docs, code, and Kusto tables. |
-| **Cross-Hive Collaboration** | Agent-to-agent communication | When a BMS debug investigation discovers the root cause is in Common or Core, the BMS hive delegates to the relevant hive. Results flow back and are synthesized into a unified answer. |
-
-### Example Hives
-
-| Hive | Domain | Docs & Code Scope |
-|------|--------|--------------------|
-| **BMS** | Backup Management Service | `src/BMS/`, DPP + RSV feature docs, BMS Kusto tables |
-| **Common** | Shared libraries, utilities, SDK | `src/Common/`, shared infra docs, common telemetry |
-| **Core** | Core platform (ARM, resource providers) | `src/Core/`, platform docs, RP registration |
-| **Protection** | Workload protection agents (VM, SQL, SAP) | `src/Protection/`, workload-specific docs & KQL |
-
-### Cross-Hive Scenario
-
-> **User:** _"A backup job for SQL on Azure VM failed with error code `UserErrorVmNotFound`. The job ID is `abc-123`. What went wrong?"_
->
-> 1. **Router** → classifies as BMS + Protection concern → dispatches to **BMS Hive**
-> 2. **BMS Debug Agent** → queries Kusto, finds the job failed during VM snapshot phase, error originates from Protection layer
-> 3. **BMS Brain** → recognizes cross-hive dependency → delegates to **Protection Hive**
-> 4. **Protection Debug Agent** → queries workload-specific Kusto tables, finds the VM was deallocated at snapshot time
-> 5. **Protection Brain** → also checks **Common Hive** for SDK retry behavior
-> 6. **Router** → synthesizes all findings: _"The backup failed because the VM was deallocated. The Protection agent attempted 3 retries (Common SDK retry policy) but the VM never came back online. Actionable fix: ensure VM is running or configure pre-backup scripts."_
-
-### Design Principles
-
-- **Each hive is self-contained** — own ChromaDB collections, own Kusto table scope, own doc set
-- **Hives are independently deployable** — a team can spin up their own hive and register it with the router
-- **Cross-hive protocol is message-based** — hives communicate via structured requests/responses, not shared memory
-- **The router never does domain work** — it only classifies, dispatches, and synthesizes
-- **Backward compatible** — today's single-hive BMS setup becomes one node in the larger network
+- [x] **CLI consolidation** — unified `brainai` CLI + legacy `run_*.py` scripts moved to `scripts/` folder
+- [ ] **Multi-tenant hive hosting** — allow different BCDR sub-teams to register their own hives via a self-service portal
+- [ ] **Hive marketplace** — teams can publish and share hive definitions (scope, docs, prompts) across the org
+- [ ] **Streaming responses** — SSE/WebSocket streaming for real-time token-by-token output in both CLI and web UI
+- [ ] **Evaluation framework** — automated eval suite that tests routing accuracy, answer quality, and cross-hive synthesis using golden question sets
+- [ ] **Plugin system for external tools** — MCP-based plugin architecture for connecting to any external tool (Grafana, Azure Monitor, PagerDuty, etc.)

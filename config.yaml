@@ -111,6 +111,295 @@ agents:
   # mediocre matches ~0.35-0.50, and poor matches <0.35.
   doc_gap_threshold: 0.50
 
+# ============================================================
+# 🐝 Agent Hive Architecture
+# ============================================================
+# Each hive is a self-contained domain with its own docs, code
+# index, vector collections, and agent set. The top-level
+# HiveRouter selects which hive(s) handle a user query.
+#
+# Shared settings (llm, kusto, vectorstore defaults) are
+# inherited from the top level unless overridden per-hive.
+# ============================================================
+hives:
+  # If true, use the HiveRouter (multi-hive mode).
+  # If false, use the classic single BrainAgent (backward compat).
+  enabled: true
+
+  # Default hive — used when the router can't determine domain
+  default_hive: "bms"
+
+  definitions:
+    bms:
+      display_name: "Backup Management Service"
+      description: >
+        The primary BCDR hive covering the Backup Management Service.
+        Handles DPP (Data Protection Platform) and RSV (Recovery Services Vault)
+        features, backup/restore operations, Kusto debugging, and all
+        management-plane APIs.
+      scope:
+        topics:
+          - "backup management"
+          - "DPP"
+          - "RSV"
+          - "backup policies"
+          - "backup instances"
+          - "restore operations"
+          - "cross-region restore"
+          - "protection containers"
+          - "recovery points"
+          - "vault configuration"
+          - "soft delete"
+          - "resource guards"
+          - "jobs and operations"
+          - "BMS service"
+          - "auto protection"
+          - "tiering"
+          - "data move"
+          - "resource move"
+        kusto_tables:
+          - "OperationStatsLocalAllClusters"
+          - "TraceLogMessageAllClusters"
+          - "ArtifactSnapshotAll"
+      paths:
+        docs_dir: "docs/agentKT"
+        repo_clone_dir: ".repo_cache"
+      vectorstore:
+        collection_name: "agent_kt_docs"
+      code_index:
+        collection_name: "bms_code"
+        sync_paths:
+          - "src"
+      agents:
+        enabled:
+          - "knowledge"
+          - "debug"
+          - "coder"
+          - "knowledge_updater"
+
+    dataplane:
+      display_name: "Backup Data Plane"
+      description: >
+        Backup data plane services — fabric agents, backup engines,
+        snapshot orchestration, data transfer, and platform-agnostic
+        backup/restore execution logic.
+      scope:
+        topics:
+          - "data plane"
+          - "backup engine"
+          - "fabric agent"
+          - "snapshot orchestration"
+          - "data transfer"
+          - "platform agnostic backup"
+          - "backup execution"
+          - "restore execution"
+          - "incremental backup"
+          - "backup data pipeline"
+        kusto_tables:
+          - "OperationStatsLocalAllClusters"
+          - "TraceLogMessageAllClusters"
+      paths:
+        docs_dir: "docs/agentKT"
+        repo_clone_dir: "D:/TEMP/Mgmt-RecoverySvcs-BackupDataPlane"
+      vectorstore:
+        collection_name: "dataplane_docs"
+      code_index:
+        collection_name: "dataplane_code"
+        sync_paths:
+          - "src/Service"
+          - "src/ClientLib"
+          - "src/PlatformAgnostic"
+      agents:
+        enabled:
+          - "knowledge"
+          - "debug"
+          - "coder"
+
+    common:
+      display_name: "Common Libraries & Infrastructure"
+      description: >
+        Shared libraries, SDK utilities, common data contracts,
+        authentication helpers, DPP common code, and infrastructure
+        used across all BCDR services. Includes base classes,
+        serialization, error handling, and cloud utilities.
+      scope:
+        topics:
+          - "common libraries"
+          - "SDK utilities"
+          - "shared data contracts"
+          - "authentication"
+          - "common helpers"
+          - "infrastructure code"
+          - "serialization"
+          - "error handling utilities"
+          - "DPP common"
+          - "cloud utilities"
+          - "base classes"
+          - "NuGet packages"
+        kusto_tables: []
+      paths:
+        docs_dir: "docs/agentKT"
+        repo_clone_dir: "D:/TEMP/Mgmt-RecoverySvcs-Common"
+      vectorstore:
+        collection_name: "common_docs"
+      code_index:
+        collection_name: "common_code"
+        sync_paths:
+          - "src/Cloud"
+          - "src/Base"
+          - "src/Dpp"
+          - "src/Public"
+      agents:
+        enabled:
+          - "knowledge"
+          - "coder"
+
+    protection:
+      display_name: "Workload Coordination & Protection"
+      description: >
+        Workload coordination service — handles workload-specific
+        protection for VMs, SQL, SAP HANA, Azure Files, and other
+        datasource types. Manages workload plugins, snapshot
+        coordination, quiesce/unquiesce, and backup/restore extensions.
+      scope:
+        topics:
+          - "workload coordination"
+          - "protection agents"
+          - "workload plugins"
+          - "VM backup"
+          - "SQL backup"
+          - "SAP HANA backup"
+          - "Azure Files backup"
+          - "snapshot coordination"
+          - "quiesce"
+          - "IaaS VM"
+          - "Azure workload"
+          - "workload extensions"
+        kusto_tables:
+          - "OperationStatsLocalAllClusters"
+          - "TraceLogMessageAllClusters"
+      paths:
+        docs_dir: "docs/agentKT"
+        repo_clone_dir: "D:/TEMP/Mgmt-RecoverySvcs-WkloadCoord"
+      vectorstore:
+        collection_name: "prot_docs"
+      code_index:
+        collection_name: "prot_code"
+        sync_paths:
+          - "src/Service"
+          - "src/ClientLib"
+      agents:
+        enabled:
+          - "knowledge"
+          - "debug"
+          - "coder"
+
+    regional:
+      display_name: "Regional RP & PIT Catalog"
+      description: >
+        Regional Resource Provider and Point-in-Time Catalog services.
+        Handles regional backup vault operations, recovery point
+        management, point-in-time restore catalog, and geo-redundant
+        backup infrastructure.
+      scope:
+        topics:
+          - "regional RP"
+          - "regional resource provider"
+          - "PIT catalog"
+          - "point in time"
+          - "recovery point catalog"
+          - "geo redundant"
+          - "regional backup"
+          - "recovery point management"
+        kusto_tables:
+          - "OperationStatsLocalAllClusters"
+      paths:
+        docs_dir: "docs/agentKT"
+        repo_clone_dir: "D:/TEMP/Mgmt-RecoverySvcs-RegionalRP"
+      vectorstore:
+        collection_name: "regional_docs"
+      code_index:
+        collection_name: "regional_code"
+        sync_paths:
+          - "src/Service"
+          - "src/ClientLib"
+      agents:
+        enabled:
+          - "knowledge"
+          - "coder"
+
+    datamover:
+      display_name: "Data Mover Service"
+      description: >
+        Data movement service — handles data transfer between storage
+        accounts, cross-region data replication, backup data migration,
+        and bulk data operations for backup and restore workflows.
+      scope:
+        topics:
+          - "data mover"
+          - "data movement"
+          - "data transfer"
+          - "cross region replication"
+          - "data migration"
+          - "bulk data operations"
+          - "storage transfer"
+          - "DOST"
+        kusto_tables:
+          - "OperationStatsLocalAllClusters"
+      paths:
+        docs_dir: "docs/agentKT"
+        repo_clone_dir: "D:/TEMP/Mgmt-RecoverySvcs-DataMover"
+      vectorstore:
+        collection_name: "datamover_docs"
+      code_index:
+        collection_name: "datamover_code"
+        sync_paths:
+          - "src/Client"
+          - "src/Common"
+          - "src/CommonL2"
+          - "src/Contracts"
+          - "src/DMClient"
+          - "src/Dost"
+      agents:
+        enabled:
+          - "knowledge"
+          - "coder"
+
+    monitoring:
+      display_name: "Monitoring & Alerting"
+      description: >
+        Monitoring and alerting infrastructure for BCDR services.
+        Handles backup health monitoring, alert generation, diagnostic
+        telemetry, SLA tracking, and operational dashboards.
+      scope:
+        topics:
+          - "monitoring"
+          - "alerting"
+          - "backup health"
+          - "SLA tracking"
+          - "diagnostic telemetry"
+          - "operational dashboards"
+          - "backup alerts"
+          - "health probes"
+        kusto_tables:
+          - "OperationStatsLocalAllClusters"
+          - "TraceLogMessageAllClusters"
+      paths:
+        docs_dir: "docs/agentKT"
+        repo_clone_dir: "D:/TEMP/Mgmt-RecoverySvcs-Monitoring"
+      vectorstore:
+        collection_name: "monitoring_docs"
+      code_index:
+        collection_name: "monitoring_code"
+        sync_paths:
+          - "src/Service"
+          - "src/ClientLib"
+      agents:
+        enabled:
+          - "knowledge"
+          - "debug"
+          - "coder"
+
 # --- Microsoft Teams Bot ---
 # Register your bot at https://dev.botframework.com or via Azure Bot Service.
 # Set app_id and app_password in config.local.yaml for production.

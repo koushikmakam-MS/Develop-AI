@@ -226,8 +226,12 @@ class CodeIndexer:
         indexed = 0
         skipped = 0
         total_chunks = 0
+        total_files = len(code_files)
 
-        for code_file in code_files:
+        for file_idx, code_file in enumerate(code_files):
+            if (file_idx + 1) % 100 == 0 or file_idx == 0:
+                log.info("Progress: %d/%d files  (%d indexed, %d skipped, %d chunks so far)",
+                         file_idx + 1, total_files, indexed, skipped, total_chunks)
             try:
                 rel_path = str(code_file.relative_to(self.repo_clone_dir))
                 file_hash = _file_hash(code_file)

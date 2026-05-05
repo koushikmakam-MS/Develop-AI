@@ -88,6 +88,27 @@ agents:
   knowledge_confidence_threshold: 0.35
   doc_gap_threshold: 0.45
 
+# --- 🐝 Agent Hive Architecture ---
+# Each hive is a self-contained domain with its own docs, code,
+# vector collections, and agent set.
+hives:
+  enabled: false                   # Set true to enable multi-hive routing
+  default_hive: "bms"
+  definitions:
+    bms:
+      display_name: "Backup Management Service"
+      description: "Primary BCDR hive — DPP + RSV features, Kusto debugging."
+      scope:
+        topics: ["backup management", "DPP", "RSV", "backup policies"]
+      paths:
+        docs_dir: "docs/agentKT"
+      vectorstore:
+        collection_name: "agent_kt_docs"
+      code_index:
+        collection_name: "bms_code"
+      agents:
+        enabled: ["knowledge", "debug", "coder", "knowledge_updater"]
+
 # --- Microsoft Teams Bot ---
 # Register your bot at https://dev.botframework.com or via Azure Bot Service.
 # Set app_id and app_password in config.local.yaml for production.

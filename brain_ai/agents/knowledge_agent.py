@@ -83,8 +83,7 @@ class KnowledgeAgent:
 
         if not hits:
             return (
-                "I don't have any indexed documentation yet. "
-                "Please run `python run_sync.py` then `python run_index.py` first.",
+                "No relevant documentation found for this question.",
                 0.0,
             )
 

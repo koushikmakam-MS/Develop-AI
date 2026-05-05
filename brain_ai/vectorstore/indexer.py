@@ -203,7 +203,7 @@ class DocIndexer:
         Returns list of {text, source, score} dicts.
         """
         if self.collection.count() == 0:
-            log.warning("Collection is empty. Run indexing first.")
+            log.debug("Doc collection '%s' is empty — no docs indexed.", self.collection.name)
             return []
 
         results = self.collection.query(

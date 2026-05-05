@@ -76,6 +76,11 @@ class BrainAgent:
         self.cfg = cfg
         self.llm = LLMClient(cfg)
 
+        # Hive identity (set when this BrainAgent is owned by a Hive)
+        self.hive_name: Optional[str] = None
+        self.hive_display_name: Optional[str] = None
+        self._peer_hive_names: List[str] = []  # other hives available
+
         # Agent registry - add new agents here
         self._agents: Dict[str, Any] = {}
         enabled = cfg.get("agents", {}).get("enabled", ["knowledge", "debug"])
@@ -100,6 +105,46 @@ class BrainAgent:
         """Register a new agent dynamically."""
         self._agents[name] = agent_instance
         log.info("Registered new agent: %s", name)
+
+    def set_hive_context(
+        self,
+        hive_name: str,
+        display_name: str,
+        peer_hive_names: List[str],
+    ):
+        """Set this BrainAgent's hive identity (called by Hive.__init__)."""
+        self.hive_name = hive_name
+        self.hive_display_name = display_name
+        self._peer_hive_names = [h for h in peer_hive_names if h != hive_name]
+        log.info(
+            "BrainAgent hive context set: %s (peers: %s)",
+            hive_name,
+            self._peer_hive_names,
+        )
+
+    def _build_delegation_hint(self) -> str:
+        """Build a delegation instruction for sub-agent system prompts.
+
+        If this BrainAgent is part of a hive and peers exist, agents
+        are taught to emit ``[DELEGATE:<hive>]`` when they detect
+        the answer requires another domain.
+        """
+        if not self._peer_hive_names:
+            return ""
+        peers = ", ".join(self._peer_hive_names)
+        return (
+            f"\n\nCROSS-DOMAIN DELEGATION:\n"
+            f"You are part of the '{self.hive_name}' domain. "
+            f"Other domains available: [{peers}].\n"
+            f"If you determine the user's question is OUTSIDE your domain "
+            f"or requires knowledge from another domain, include this signal "
+            f"at the END of your response:\n"
+            f"[DELEGATE:<domain_name>] <brief context for the other domain>\n"
+            f"Example: [DELEGATE:protection] The user is asking about VM "
+            f"snapshot failures during backup — need workload-specific analysis.\n"
+            f"Only delegate when truly necessary — most questions should be "
+            f"answered within your domain."
+        )
 
     def _route(self, message: str) -> str:
         """Use LLM to classify which agent should handle the message."""

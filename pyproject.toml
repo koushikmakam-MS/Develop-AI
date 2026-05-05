@@ -36,6 +36,7 @@ teams = [
 ]
 
 [project.scripts]
+brainai = "brain_ai.cli.main:main"
 BCDR-devai-chat = "brain_ai.cli.chat:run_chat"
 BCDR-devai-kusto = "brain_ai.kusto.server:main"
 BCDR-devai-bot = "brain_ai.bot.app:run"

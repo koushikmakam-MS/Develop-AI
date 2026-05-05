@@ -24,8 +24,14 @@ bcrd_devai.log
 brainai.log
 brainai_bot.log
 daily_sync.log
+hive_index.log
 .doc_improver_last_run
 doc_gaps.json
+
+# Demo / scratch scripts (not part of core)
+demo_hive.py
+run_deep_query.py
+run_index_remaining.py
 
 # Secrets - never commit
 config.local.yaml
