@@ -494,7 +494,37 @@ The script will:
 7. Run the Doc Improver (if enabled — handles bootstrap from zero docs)
 8. Start the Kusto MCP server in background
 
-### Option B: Step-by-Step Setup
+### Option B: Install from Wheel (no clone needed)
+
+If you received the `.whl` file (e.g. via Teams or a shared drive), you can install without cloning the repo:
+
+```bash
+# 1. Create & activate a venv
+python -m venv .venv
+# Windows: & .\.venv\Scripts\Activate.ps1
+# Linux/Mac: source .venv/bin/activate
+
+# 2. Install the wheel (all dependencies included)
+pip install bcdr_devai-0.1.0-py3-none-any.whl
+
+# 3. Set up config files
+#    Copy config.yaml.template and config.local.yaml.template from the repo
+#    or create them manually (see Configuration section below).
+
+# 4. Start chatting
+brainai chat
+```
+
+The `brainai` command is automatically available after install — no need to clone the repo or run scripts.
+
+> **Building a new wheel** (for maintainers):
+> ```bash
+> pip install build
+> python -m build
+> # Output: dist/bcdr_devai-<version>-py3-none-any.whl
+> ```
+
+### Option C: Step-by-Step Setup (from source)
 
 #### 1. Create & activate a virtual environment
 
@@ -967,6 +997,7 @@ az containerapp update --name BCDR-devai-bot \
 ### 🏗️ Platform & Scale
 
 - [x] **CLI consolidation** — unified `brainai` CLI + legacy `run_*.py` scripts moved to `scripts/` folder
+- [x] **Distributable wheel package** — `python -m build` produces a `.whl` file that anyone can install with `pip install` (no clone needed)
 - [ ] **Multi-tenant hive hosting** — allow different BCDR sub-teams to register their own hives via a self-service portal
 - [ ] **Hive marketplace** — teams can publish and share hive definitions (scope, docs, prompts) across the org
 - [ ] **Streaming responses** — SSE/WebSocket streaming for real-time token-by-token output in both CLI and web UI
