@@ -1,10 +1,5 @@
 # 🧠 BCDR DeveloperAI - Azure Backup Management AI Assistant
 
-[![Python 3.10+](https://img.shields.io/badge/python-3.10%2B-blue.svg)](https://python.org)
-[![License: MIT](https://img.shields.io/badge/license-MIT-green.svg)](LICENSE)
-
-> **Repo:** [https://github.com/koushikmakam-MS/Develop-AI](https://github.com/koushikmakam-MS/Develop-AI)
-
 Multi-agent **Hive Architecture** powered by Azure AI Foundry (GPT-4o) — a network of 7 domain-specialized agent clusters that collaborate across BCDR service boundaries. Each hive has its own BrainAgent, docs, code index, and vector collections. Connects to Azure DevOps documentation and Kusto for intelligent project assistance and debugging. Optionally extends to Microsoft Teams as a bot.
 
 ## 🐝 Agent Hive Architecture
