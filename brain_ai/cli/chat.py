@@ -40,10 +40,15 @@ AGENT_COLORS = {
 }
 
 HIVE_COLORS = {
-    "bms": "blue",
+    "dpp": "blue",
+    "rsv": "bright_blue",
+    "dataplane": "magenta",
     "common": "green",
     "protection": "red",
-    "core": "magenta",
+    "regional": "cyan",
+    "pitcatalog": "yellow",
+    "datamover": "bright_red",
+    "monitoring": "bright_green",
 }
 
 WELCOME_TEXT = """

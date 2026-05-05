@@ -127,49 +127,100 @@ hives:
   enabled: true
 
   # Default hive — used when the router can't determine domain
-  default_hive: "bms"
+  default_hive: "dpp"
 
   definitions:
-    bms:
-      display_name: "Backup Management Service"
+    dpp:
+      display_name: "Data Protection Platform (DPP)"
       description: >
-        The primary BCDR hive covering the Backup Management Service.
-        Handles DPP (Data Protection Platform) and RSV (Recovery Services Vault)
-        features, backup/restore operations, Kusto debugging, and all
-        management-plane APIs.
+        DPP (Data Protection Platform) — the modern backup vault platform.
+        Handles backup instances, backup policies, backup vaults,
+        cross-region restore, resource guards, immutability, soft delete,
+        DPP fabric, datasource management, and all DPP REST APIs.
       scope:
         topics:
-          - "backup management"
           - "DPP"
-          - "RSV"
-          - "backup policies"
+          - "data protection platform"
+          - "backup vault"
           - "backup instances"
-          - "restore operations"
+          - "backup policies"
           - "cross-region restore"
-          - "protection containers"
-          - "recovery points"
-          - "vault configuration"
-          - "soft delete"
           - "resource guards"
-          - "jobs and operations"
-          - "BMS service"
-          - "auto protection"
+          - "immutability"
+          - "soft delete"
+          - "DPP fabric"
+          - "datasource"
+          - "backup vault configuration"
+          - "operational backup"
+          - "vault tier"
+          - "archive tier"
           - "tiering"
-          - "data move"
-          - "resource move"
+          - "logical store"
+          - "data store"
         kusto_tables:
           - "OperationStatsLocalAllClusters"
           - "TraceLogMessageAllClusters"
           - "ArtifactSnapshotAll"
       paths:
-        docs_dir: "docs/agentKT"
+        docs_dir: "docs/agentKT/docs/agentKT/DPP"
         repo_clone_dir: ".repo_cache"
       vectorstore:
-        collection_name: "agent_kt_docs"
+        collection_name: "dpp_docs"
       code_index:
-        collection_name: "bms_code"
+        collection_name: "dpp_code"
         sync_paths:
-          - "src"
+          - "src/Service/Dpp"
+          - "src/ClientLib"
+      agents:
+        enabled:
+          - "knowledge"
+          - "debug"
+          - "coder"
+          - "knowledge_updater"
+
+    rsv:
+      display_name: "Recovery Services Vault (RSV)"
+      description: >
+        RSV (Recovery Services Vault) — the classic backup management platform.
+        Handles protected items, protection containers, backup engines,
+        protection policies, recovery points, jobs, vault config and usages,
+        backup fabrics, and all RSV REST APIs.
+      scope:
+        topics:
+          - "RSV"
+          - "recovery services vault"
+          - "protected items"
+          - "protection containers"
+          - "backup engines"
+          - "protection policies"
+          - "recovery points"
+          - "jobs and operations"
+          - "vault config"
+          - "vault usages"
+          - "backup fabrics"
+          - "backup management"
+          - "BMS service"
+          - "auto protection"
+          - "data move"
+          - "resource move"
+          - "protection intent"
+          - "workload items"
+        kusto_tables:
+          - "OperationStatsLocalAllClusters"
+          - "TraceLogMessageAllClusters"
+          - "ArtifactSnapshotAll"
+      paths:
+        docs_dir: "docs/agentKT/docs/agentKT/RSV"
+        repo_clone_dir: ".repo_cache"
+      vectorstore:
+        collection_name: "rsv_docs"
+      code_index:
+        collection_name: "rsv_code"
+        sync_paths:
+          - "src/Service/BackupProviders"
+          - "src/Service/ServiceInstances"
+          - "src/Service/RestApi"
+          - "src/ClientLib"
       agents:
         enabled:
           - "knowledge"
@@ -295,22 +346,23 @@ hives:
           - "coder"
 
     regional:
-      display_name: "Regional RP & PIT Catalog"
+      display_name: "Regional Resource Provider"
       description: >
-        Regional Resource Provider and Point-in-Time Catalog services.
-        Handles regional backup vault operations, recovery point
-        management, point-in-time restore catalog, and geo-redundant
-        backup infrastructure.
+        Regional Resource Provider service. Handles regional backup
+        vault operations, geo-redundant backup infrastructure,
+        cross-region restore orchestration, and regional resource
+        management APIs.
       scope:
         topics:
           - "regional RP"
           - "regional resource provider"
-          - "PIT catalog"
-          - "point in time"
-          - "recovery point catalog"
           - "geo redundant"
           - "regional backup"
-          - "recovery point management"
+          - "cross region restore"
+          - "regional vault"
+          - "storage redundancy"
+          - "GRS"
+          - "regional operations"
         kusto_tables:
           - "OperationStatsLocalAllClusters"
       paths:
@@ -320,6 +372,41 @@ hives:
         collection_name: "regional_docs"
       code_index:
         collection_name: "regional_code"
+        sync_paths:
+          - "src/Service"
+          - "src/ClientLib"
+      agents:
+        enabled:
+          - "knowledge"
+          - "coder"
+
+    pitcatalog:
+      display_name: "PIT Catalog"
+      description: >
+        Point-in-Time Catalog service. Manages recovery point
+        lifecycle, recovery point catalog operations, point-in-time
+        restore metadata, recovery point expiry, and tiering of
+        recovery points across storage tiers.
+      scope:
+        topics:
+          - "PIT catalog"
+          - "point in time"
+          - "recovery point catalog"
+          - "recovery point management"
+          - "recovery point expiry"
+          - "recovery point tiering"
+          - "restore points"
+          - "PITC"
+          - "catalog operations"
+        kusto_tables:
+          - "OperationStatsLocalAllClusters"
+      paths:
+        docs_dir: "docs/agentKT"
+        repo_clone_dir: "D:/TEMP/Mgmt-RecoverySvcs-RegionalRP"
+      vectorstore:
+        collection_name: "pitcatalog_docs"
+      code_index:
+        collection_name: "pitcatalog_code"
         sync_paths:
           - "src/Service"
           - "src/ClientLib"

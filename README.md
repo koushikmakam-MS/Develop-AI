@@ -22,39 +22,35 @@ graph TB
         Router["🧭 Top-Level Router Agent<br/><i>Intent classification · Hive selection<br/>Cross-hive orchestration</i>"]
     end
 
-    subgraph BMS_Hive["🐝 BMS Hive<br/><i>Backup Management Service</i>"]
-        BMS_Brain["🧠 BMS Brain"]
-        BMS_Know["📚 Knowledge"]
-        BMS_Debug["🔍 Debug"]
-        BMS_Code["💻 Coder"]
-        BMS_Doc["📝 Doc Improver"]
-        BMS_Brain --> BMS_Know
-        BMS_Brain --> BMS_Debug
-        BMS_Brain --> BMS_Code
-        BMS_Brain --> BMS_Doc
+    subgraph DPP_Hive["🐝 DPP Hive<br/><i>Data Protection Platform</i>"]
+        DPP_Brain["🧠 DPP Brain"]
+        DPP_Know["📚 Knowledge"]
+        DPP_Debug["🔍 Debug"]
+        DPP_Code["💻 Coder"]
+        DPP_Brain --> DPP_Know
+        DPP_Brain --> DPP_Debug
+        DPP_Brain --> DPP_Code
+    end
+
+    subgraph RSV_Hive["🐝 RSV Hive<br/><i>Recovery Services Vault</i>"]
+        RSV_Brain["🧠 RSV Brain"]
+        RSV_Know["📚 Knowledge"]
+        RSV_Debug["🔍 Debug"]
+        RSV_Code["💻 Coder"]
+        RSV_Brain --> RSV_Know
+        RSV_Brain --> RSV_Debug
+        RSV_Brain --> RSV_Code
     end
 
     subgraph Common_Hive["🐝 Common Hive<br/><i>Shared Libraries & Infra</i>"]
         COM_Brain["🧠 Common Brain"]
         COM_Know["📚 Knowledge"]
-        COM_Debug["🔍 Debug"]
         COM_Code["💻 Coder"]
         COM_Brain --> COM_Know
-        COM_Brain --> COM_Debug
         COM_Brain --> COM_Code
     end
 
-    subgraph Core_Hive["🐝 Core Hive<br/><i>Core Platform Services</i>"]
-        CORE_Brain["🧠 Core Brain"]
-        CORE_Know["📚 Knowledge"]
-        CORE_Debug["🔍 Debug"]
-        CORE_Code["💻 Coder"]
-        CORE_Brain --> CORE_Know
-        CORE_Brain --> CORE_Debug
-        CORE_Brain --> CORE_Code
-    end
-
-    subgraph Prot_Hive["🐝 Protection Hive<br/><i>Protection & Workload Agents</i>"]
+    subgraph Prot_Hive["🐝 Protection Hive<br/><i>Workload Coordination</i>"]
         PROT_Brain["🧠 Protection Brain"]
         PROT_Know["📚 Knowledge"]
         PROT_Debug["🔍 Debug"]
@@ -64,21 +60,56 @@ graph TB
         PROT_Brain --> PROT_Code
     end
 
-    Router --> BMS_Brain
-    Router --> COM_Brain
-    Router --> CORE_Brain
-    Router --> PROT_Brain
+    subgraph DP_Hive["🐝 DataPlane Hive<br/><i>Backup Data Plane</i>"]
+        DP_Brain["🧠 DataPlane Brain"]
+        DP_Know["📚 Knowledge"]
+        DP_Code["💻 Coder"]
+        DP_Brain --> DP_Know
+        DP_Brain --> DP_Code
+    end
 
-    BMS_Brain <-. "cross-hive<br/>collaboration" .-> COM_Brain
-    BMS_Brain <-. "cross-hive<br/>collaboration" .-> CORE_Brain
-    COM_Brain <-. "cross-hive<br/>collaboration" .-> CORE_Brain
-    CORE_Brain <-. "cross-hive<br/>collaboration" .-> PROT_Brain
+    subgraph Reg_Hive["🐝 Regional Hive<br/><i>Regional RP</i>"]
+        REG_Brain["🧠 Regional Brain"]
+    end
+
+    subgraph PIT_Hive["🐝 PIT Catalog Hive<br/><i>Recovery Points</i>"]
+        PIT_Brain["🧠 PIT Brain"]
+    end
+
+    subgraph DM_Hive["🐝 DataMover Hive<br/><i>Data Movement</i>"]
+        DM_Brain["🧠 DataMover Brain"]
+    end
+
+    subgraph Mon_Hive["🐝 Monitoring Hive<br/><i>Alerting & Telemetry</i>"]
+        MON_Brain["🧠 Monitoring Brain"]
+    end
+
+    Router --> DPP_Brain
+    Router --> RSV_Brain
+    Router --> COM_Brain
+    Router --> PROT_Brain
+    Router --> DP_Brain
+    Router --> REG_Brain
+    Router --> PIT_Brain
+    Router --> DM_Brain
+    Router --> MON_Brain
+
+    DPP_Brain <-. "cross-hive" .-> RSV_Brain
+    DPP_Brain <-. "cross-hive" .-> PROT_Brain
+    RSV_Brain <-. "cross-hive" .-> COM_Brain
+    DPP_Brain <-. "cross-hive" .-> PIT_Brain
+    DPP_Brain <-. "cross-hive" .-> DM_Brain
 
     style Gateway fill:#fff3e0,stroke:#e65100,color:#000
-    style BMS_Hive fill:#e3f2fd,stroke:#1565c0,color:#000
+    style DPP_Hive fill:#e3f2fd,stroke:#1565c0,color:#000
+    style RSV_Hive fill:#e8eaf6,stroke:#283593,color:#000
     style Common_Hive fill:#e8f5e9,stroke:#2e7d32,color:#000
-    style Core_Hive fill:#f3e5f5,stroke:#6a1b9a,color:#000
     style Prot_Hive fill:#fce4ec,stroke:#b71c1c,color:#000
+    style DP_Hive fill:#f3e5f5,stroke:#6a1b9a,color:#000
+    style Reg_Hive fill:#e0f2f1,stroke:#00695c,color:#000
+    style PIT_Hive fill:#fff8e1,stroke:#f9a825,color:#000
+    style DM_Hive fill:#fbe9e7,stroke:#bf360c,color:#000
+    style Mon_Hive fill:#f1f8e9,stroke:#558b2f,color:#000
 ```
 
 ### How It Works
@@ -91,15 +122,17 @@ graph TB
 | **Cross-Hive Delegation** | Agent-to-agent signals | Agents can emit `[DELEGATE:<hive>] <context>` when they detect the answer requires another domain. The router intercepts and orchestrates. |
 | **Multi-Hive Synthesis** | Unified response | All responses are synthesized into a single end-to-end flow with cross-service interactions clearly documented. |
 
-### Active Hives (7 domains)
+### Active Hives (9 domains)
 
-| Hive | Domain | Code Repo | Agents |
+| Hive | Domain | Code Scope | Agents |
 |------|--------|-----------|--------|
-| **bms** ⭐ | Backup Management Service | `.repo_cache` (BMS main) | knowledge, debug, coder, knowledge_updater |
+| **dpp** ⭐ | Data Protection Platform | `src/Service/Dpp` | knowledge, debug, coder, knowledge_updater |
+| **rsv** | Recovery Services Vault | `src/Service/BackupProviders`, `RestApi` | knowledge, debug, coder, knowledge_updater |
 | **dataplane** | Backup Data Plane | `Mgmt-RecoverySvcs-BackupDataPlane` | knowledge, debug, coder |
 | **common** | Common Libraries & Infrastructure | `Mgmt-RecoverySvcs-Common` | knowledge, coder |
 | **protection** | Workload Coordination & Protection | `Mgmt-RecoverySvcs-WkloadCoord` | knowledge, debug, coder |
-| **regional** | Regional RP & PIT Catalog | `Mgmt-RecoverySvcs-RegionalRP` | knowledge, coder |
+| **regional** | Regional Resource Provider | `Mgmt-RecoverySvcs-RegionalRP` | knowledge, coder |
+| **pitcatalog** | PIT Catalog (Recovery Points) | `Mgmt-RecoverySvcs-RegionalRP` | knowledge, coder |
 | **datamover** | Data Mover Service | `Mgmt-RecoverySvcs-DataMover` | knowledge, coder |
 | **monitoring** | Monitoring & Alerting | `Mgmt-RecoverySvcs-Monitoring` | knowledge, debug, coder |
 
@@ -107,9 +140,9 @@ graph TB
 
 > **User:** _"A backup job for SQL on Azure VM failed with error code `UserErrorVmNotFound`. The job ID is `abc-123`. What went wrong?"_
 >
-> 1. **Router** → classifies as BMS + Protection concern → dispatches to **BMS Hive**
-> 2. **BMS Debug Agent** → queries Kusto, finds the job failed during VM snapshot phase, error originates from Protection layer
-> 3. **BMS Brain** → recognizes cross-hive dependency → delegates to **Protection Hive**
+> 1. **Router** → classifies as DPP + Protection concern → dispatches to **DPP Hive**
+> 2. **DPP Debug Agent** → queries Kusto, finds the job failed during VM snapshot phase, error originates from Protection layer
+> 3. **DPP Brain** → recognizes cross-hive dependency → delegates to **Protection Hive**
 > 4. **Protection Debug Agent** → queries workload-specific Kusto tables, finds the VM was deallocated at snapshot time
 > 5. **Protection Brain** → also checks **Common Hive** for SDK retry behavior
 > 6. **Router** → synthesizes all findings: _"The backup failed because the VM was deallocated. The Protection agent attempted 3 retries (Common SDK retry policy) but the VM never came back online. Actionable fix: ensure VM is running or configure pre-backup scripts."_
