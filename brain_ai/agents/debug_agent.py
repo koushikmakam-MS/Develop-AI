@@ -6,7 +6,7 @@ procedures from docs and generating/running KQL queries.
 
 import logging
 import re
-from typing import Dict, List, Optional
+from typing import Any, Dict, List, Optional
 
 from brain_ai.config import get_config
 from brain_ai.kusto.client import KustoMCPClient
@@ -15,9 +15,15 @@ from brain_ai.vectorstore.indexer import DocIndexer
 
 log = logging.getLogger(__name__)
 
-# Pattern to detect GUIDs (TaskId, RequestId, etc.)
+# Pattern to detect plain GUIDs (SubscriptionId, RequestId, etc.)
 GUID_PATTERN = re.compile(
     r"[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}"
+)
+
+# Pattern to detect TaskIds — GUID with optional suffix like -Ibz, -AzureWorkload, -AzureVm
+TASKID_PATTERN = re.compile(
+    r"[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}"
+    r"(?:-[A-Za-z][A-Za-z0-9_]*)*"
 )
 
 # Patterns that indicate the user already specified a time range
@@ -164,6 +170,11 @@ IMPORTANT:
 - Adapt those queries to the specific TaskId/RequestId/SubscriptionId from the standard flow results.
 - Replace all `ago(<timerange>)` placeholders with the time range provided.
 - Focus on queries that add NEW information beyond what the standard flow already found.
+- If **source code context** is provided, use it to:
+  * Pinpoint the exact method/class where the error originates.
+  * Explain what validation or logic failed in the code path.
+  * Identify cross-service calls or dependencies in the code.
+  * Cite specific file paths and method names in your analysis.
 
 RULES:
 - When you want to EXECUTE a query, output it in this exact format:
@@ -235,6 +246,23 @@ class DebugAgent:
         re.IGNORECASE,
     )
 
+    # Regex to extract file:line references from KQL trace results
+    # Matches patterns like "BMSHandler.cs:245", "DataProtectionResource.cs(312)"
+    _FILE_LINE_RE = re.compile(
+        r'\b([A-Z][A-Za-z0-9_]+\.cs)(?:[:("]\s*(\d+))?',
+    )
+
+    # Regex to extract class/method names from error messages
+    # Matches "ClassName.MethodName" or "Namespace.Class.Method" patterns
+    _CLASS_METHOD_RE = re.compile(
+        r'\b([A-Z][A-Za-z0-9]+(?:\.[A-Z][A-Za-z0-9]+){1,4})\b',
+    )
+
+    # Regex to extract Role values (service roles like BMSWebRole, BMSDppTeeWorkerRole)
+    _ROLE_RE = re.compile(
+        r'\b(BMS[A-Za-z]+Role|Dpp[A-Za-z]+Role|[A-Za-z]+WorkerRole)\b',
+    )
+
     def __init__(self, cfg: dict | None = None):
         if cfg is None:
             cfg = get_config()
@@ -249,11 +277,85 @@ class DebugAgent:
         self._session_task_ids: set[str] = set()       # TaskId/RequestId GUIDs for this session
         self._session_subscription_ids: set[str] = set()  # SubscriptionId GUIDs for this session
 
+        # Optional coder agent for code enrichment (set via set_coder())
+        self._coder: Optional[Any] = None
+
         log.info(
             "DebugAgent initialized (Kusto MCP: %s, database: %s)",
             self.kusto.mcp_url,
             self._kusto_db,
         )
+
+    def set_coder(self, coder_agent) -> None:
+        """Attach a CoderAgent for code enrichment during debugging."""
+        self._coder = coder_agent
+        log.info("DebugAgent: coder agent attached for code enrichment")
+
+    def _extract_code_refs(self, text: str) -> List[str]:
+        """Extract code references (files, classes, methods, roles) from KQL results.
+
+        Returns a list of search terms suitable for querying the code index.
+        """
+        refs: set[str] = set()
+
+        # File:line references (e.g. BMSHandler.cs:245)
+        for m in self._FILE_LINE_RE.finditer(text):
+            filename = m.group(1)
+            refs.add(filename.replace(".cs", ""))  # search by class name
+
+        # Class.Method patterns from error messages
+        for m in self._CLASS_METHOD_RE.finditer(text):
+            full = m.group(1)
+            # Skip common false positives
+            if full.startswith(("Microsoft.Azure.", "System.", "Newtonsoft.")):
+                continue
+            # Take the last two segments (Class.Method)
+            parts = full.split(".")
+            if len(parts) >= 2:
+                refs.add(".".join(parts[-2:]))
+
+        # Service roles → map to code search terms
+        for m in self._ROLE_RE.finditer(text):
+            refs.add(m.group(1))
+
+        return sorted(refs)[:10]  # cap at 10 to avoid over-searching
+
+    def _get_code_context(self, phase1_summary: str, issue: str) -> str | None:
+        """Use the coder agent to find source code relevant to the debug findings.
+
+        Extracts code references from Phase 1 KQL results and the original issue,
+        then queries the code index for matching source code.
+
+        Returns a code context string or None if no coder or no results.
+        """
+        if not self._coder:
+            return None
+
+        # Extract code references from Phase 1 results + original issue
+        refs = self._extract_code_refs(phase1_summary + "\n" + issue)
+        if not refs:
+            log.info("DebugAgent: no code references found in Phase 1 results")
+            return None
+
+        log.info("DebugAgent: found %d code references: %s", len(refs), refs)
+
+        # Build a focused code query from the references
+        code_question = (
+            f"Find the source code for these components involved in a failure: "
+            f"{", ".join(refs)}. "
+            f"Show the relevant code paths, error handling, and any "
+            f"cross-service calls."
+        )
+
+        try:
+            code_response = self._coder.analyze_simple(code_question)
+            if code_response and not code_response.startswith("I don't have any indexed source code"):
+                log.info("DebugAgent: code enrichment returned %d chars", len(code_response))
+                return code_response
+        except Exception as e:
+            log.warning("DebugAgent: code enrichment failed (non-fatal): %s", e)
+
+        return None
 
     def _extract_and_run_kql(self, text: str) -> Optional[str]:
         """Extract [EXECUTE_KQL]...[/EXECUTE_KQL] blocks and run them."""
@@ -392,23 +494,24 @@ class DebugAgent:
             return query
         return self._AGO_RE.sub(self._session_time_range, query)
 
-    # Patterns for classifying GUIDs by surrounding keyword context
+    # Patterns for classifying IDs by surrounding keyword context
     _TASK_CONTEXT_RE = re.compile(
         r'(?:task(?:\s*id)?|request(?:\s*id)?)\s*[:=]?\s*'
-        r'["\']?(' + GUID_PATTERN.pattern + r')["\']?',
+        r'["\']?(' + TASKID_PATTERN.pattern + r')["\']?',
         re.IGNORECASE,
     )
 
     def _classify_guids(self, text: str) -> dict[str, set[str]]:
-        """Classify all GUIDs in *text* by context into subscription / task / unknown.
+        """Classify all IDs in *text* by context into subscription / task / unknown.
 
         Returns a dict with keys:
           - 'subscription': GUIDs near subscription/sub keywords
-          - 'task': GUIDs near TaskId/RequestId keywords
-          - 'unknown': GUIDs that couldn't be classified
+          - 'task': TaskIds (GUID+optional suffix) near TaskId/RequestId keywords
+          - 'unknown': IDs that couldn't be classified
         """
-        all_guids = {g.lower() for g in GUID_PATTERN.findall(text)}
-        if not all_guids:
+        # Capture full TaskId-shaped strings (GUID + optional suffix like -Ibz)
+        all_ids = {g.lower() for g in TASKID_PATTERN.findall(text)}
+        if not all_ids:
             return {'subscription': set(), 'task': set(), 'unknown': set()}
 
         classified_sub: set[str] = set()
@@ -422,7 +525,13 @@ class DebugAgent:
         for m in self._TASK_CONTEXT_RE.finditer(text):
             classified_task.add(m.group(1).lower())
 
-        unknown = all_guids - classified_sub - classified_task
+        # IDs with suffixes (e.g., guid-Ibz) are always TaskIds
+        for eid in all_ids:
+            base_guid = eid[:36]  # first 36 chars = GUID portion
+            if len(eid) > 36:  # has suffix → definitely a TaskId
+                classified_task.add(eid)
+
+        unknown = all_ids - classified_sub - classified_task
         return {
             'subscription': classified_sub,
             'task': classified_task,
@@ -454,10 +563,10 @@ class DebugAgent:
         return query
 
     def _extract_task_ids(self, text: str) -> set[str]:
-        """Pull all GUIDs from *text* that appear near TaskId/RequestId keywords."""
+        """Pull all TaskId-shaped strings from *text* (GUID + optional suffix)."""
         ids: set[str] = set()
-        # Direct GUID extraction from the user message
-        ids.update(GUID_PATTERN.findall(text))
+        # Use TASKID_PATTERN to capture full IDs like guid-Ibz
+        ids.update(TASKID_PATTERN.findall(text))
         return {g.lower() for g in ids}
 
     def _collect_ids_from_results(self, kql_results: str) -> None:
@@ -472,8 +581,8 @@ class DebugAgent:
                 self._session_subscription_ids.add(sub_id)
                 log.info("Session SubscriptionId captured from results: %s", sub_id)
 
-        # Capture TaskId / RequestId GUIDs (all remaining GUIDs)
-        new_ids = {g.lower() for g in GUID_PATTERN.findall(kql_results)}
+        # Capture TaskId / RequestId (GUID + optional suffix)
+        new_ids = {g.lower() for g in TASKID_PATTERN.findall(kql_results)}
         # Don't re-add subscription IDs as task IDs
         new_ids -= self._session_subscription_ids
         if new_ids - self._session_task_ids:
@@ -585,7 +694,7 @@ class DebugAgent:
         """
         # ── Pre-flight: time range ──────────────────────────────────────
         if self._needs_time_range(issue, conversation_history):
-            guids = GUID_PATTERN.findall(issue)
+            guids = TASKID_PATTERN.findall(issue)
             guid_str = ", ".join(f"`{g}`" for g in guids[:3]) if guids else "your query"
             return (
                 f"I found {guid_str} in your request. Before I run KQL queries, "
@@ -704,7 +813,16 @@ class DebugAgent:
             return phase1_output
 
         # ================================================================
-        # PHASE 2: Feature-Specific Deep Dive (using KT docs)
+        # Code Enrichment: find source code for the failing components
+        # ================================================================
+        code_context = self._get_code_context(phase1_summary, issue)
+        if code_context:
+            log.info("Code enrichment: %d chars of source code context", len(code_context))
+        else:
+            log.info("Code enrichment: no code context available")
+
+        # ================================================================
+        # PHASE 2: Feature-Specific Deep Dive (using KT docs + code)
         # ================================================================
         log.info("Phase 2: Feature-specific deep dive from KT docs")
 
@@ -729,8 +847,21 @@ class DebugAgent:
                 f"`where RequestId` filter scoped to these IDs.\n\n"
             )
 
+        # Build code context section for Phase 2
+        code_section = ""
+        if code_context:
+            # Truncate to avoid blowing the context window
+            code_snippet = code_context[:6000]
+            code_section = (
+                f"## Relevant Source Code (from code index):\n\n"
+                f"{code_snippet}\n\n"
+                f"Use this source code to understand HOW the failing component works, "
+                f"what validations it performs, and where the error originates in the code path.\n\n"
+            )
+
         phase2_message = (
             f"## Results from Standard Debugging Flow (Phase 1):\n\n{phase1_summary}\n\n"
+            f"{code_section}"
             f"## Feature-specific documentation:\n\n{context_block}\n\n"
             f"## Kusto cluster: {self.cfg['kusto']['cluster_url']}\n"
             f"## Database: {self._kusto_db}\n\n"
@@ -742,8 +873,9 @@ class DebugAgent:
             f"run feature-specific queries to get deeper context. "
             f"Use [EXECUTE_KQL]...[/EXECUTE_KQL] to run queries.\n"
             f"After running queries, provide a FINAL consolidated summary with:\n"
-            f"- Root cause\n"
+            f"- Root cause (cite the source code file/method if code context is available)\n"
             f"- Affected component / role\n"
+            f"- Code path that led to the failure\n"
             f"- Actionable next steps"
         )
 
@@ -778,7 +910,19 @@ class DebugAgent:
 
         # Build readable Phase 2 output
         clean_phase2_llm = self._clean_execute_blocks(phase2_llm)
-        phase2_output_parts = ["\n\n---\n\n## 📋 Phase 2 — Feature-Specific Deep Dive\n"]
+        phase2_output_parts = []
+        if code_context:
+            phase2_output_parts.append("\n\n---\n\n## 💻 Source Code Context\n")
+            phase2_output_parts.append(
+                "_Code references found in the failure trace were looked up "
+                "in the indexed source code:_\n"
+            )
+            refs = self._extract_code_refs(phase1_summary + "\n" + issue)
+            if refs:
+                phase2_output_parts.append(
+                    "**Components found:** " + ", ".join(f"`{r}`" for r in refs) + "\n"
+                )
+        phase2_output_parts.append("\n\n---\n\n## 📋 Phase 2 — Feature-Specific Deep Dive\n")
         phase2_output_parts.append(clean_phase2_llm)
         if phase2_kql is not None:
             phase2_output_parts.append(f"\n\n### Feature-Specific Results\n\n{phase2_kql}")

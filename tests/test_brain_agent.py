@@ -332,3 +332,71 @@ class TestConversationHistory:
         brain.reset_conversation()
         assert brain._conversation_history == []
         assert brain._last_agent is None
+
+
+# ── Debug Agent Code Enrichment ─────────────────────────────────────────
+
+class TestDebugCodeEnrichment:
+    """Tests for debug agent code reference extraction and coder wiring."""
+
+    def test_extract_code_refs_from_file_line(self):
+        from brain_ai.agents.debug_agent import DebugAgent
+        cfg = _make_cfg()
+        cfg["agents"]["enabled"] = ["debug"]
+        agent = DebugAgent.__new__(DebugAgent)
+        # Test file:line extraction
+        text = "Error in BMSHandler.cs:245 and DataProtectionResource.cs(312)"
+        refs = agent._extract_code_refs(text)
+        assert "BMSHandler" in refs
+        assert "DataProtectionResource" in refs
+
+    def test_extract_code_refs_from_class_method(self):
+        from brain_ai.agents.debug_agent import DebugAgent
+        agent = DebugAgent.__new__(DebugAgent)
+        text = "Failed at BackupController.ValidateRequest during processing"
+        refs = agent._extract_code_refs(text)
+        assert "BackupController.ValidateRequest" in refs
+
+    def test_extract_code_refs_skips_system_namespaces(self):
+        from brain_ai.agents.debug_agent import DebugAgent
+        agent = DebugAgent.__new__(DebugAgent)
+        text = "System.Net.Http.HttpClient threw Microsoft.Azure.Storage.Exception"
+        refs = agent._extract_code_refs(text)
+        # Should skip System.* and Microsoft.Azure.* prefixed
+        for r in refs:
+            assert not r.startswith("System.")
+            assert not r.startswith("Microsoft.Azure.")
+
+    def test_extract_code_refs_roles(self):
+        from brain_ai.agents.debug_agent import DebugAgent
+        agent = DebugAgent.__new__(DebugAgent)
+        text = "Role: BMSWebRole logged error, BMSDppTeeWorkerRole also affected"
+        refs = agent._extract_code_refs(text)
+        assert "BMSWebRole" in refs
+        assert "BMSDppTeeWorkerRole" in refs
+
+    def test_set_coder_wires_agent(self):
+        from brain_ai.agents.debug_agent import DebugAgent
+        agent = DebugAgent.__new__(DebugAgent)
+        agent._coder = None
+        mock_coder = MagicMock()
+        agent.set_coder(mock_coder)
+        assert agent._coder is mock_coder
+
+    @patch("brain_ai.agents.brain_agent.KnowledgeUpdaterAgent")
+    @patch("brain_ai.agents.brain_agent.CoderAgent")
+    @patch("brain_ai.agents.brain_agent.DebugAgent")
+    @patch("brain_ai.agents.brain_agent.KnowledgeAgent")
+    def test_brain_wires_coder_into_debug(self, MockKnowledge, MockDebug, MockCoder, MockUpdater):
+        cfg = _make_cfg()
+        cfg["agents"]["enabled"] = ["debug", "coder"]
+        brain = BrainAgent(cfg)
+        # Verify set_coder was called on the debug agent with the coder agent
+        MockDebug.return_value.set_coder.assert_called_once_with(MockCoder.return_value)
+
+    def test_get_code_context_returns_none_without_coder(self):
+        from brain_ai.agents.debug_agent import DebugAgent
+        agent = DebugAgent.__new__(DebugAgent)
+        agent._coder = None
+        result = agent._get_code_context("some summary", "some issue")
+        assert result is None

@@ -82,6 +82,10 @@ class BrainAgent:
         if "knowledge_updater" in enabled:
             self._agents["knowledge_updater"] = KnowledgeUpdaterAgent(cfg)
 
+        # Wire coder into debug agent for code enrichment
+        if "debug" in self._agents and "coder" in self._agents:
+            self._agents["debug"].set_coder(self._agents["coder"])
+
         # Conversation history for multi-turn context
         self._conversation_history: List[Dict] = []
         # Track which agent handled the last turn (for routing continuity)
