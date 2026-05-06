@@ -79,7 +79,7 @@ class KnowledgeAgent:
         Returns (response_text, best_score).
         """
         # Retrieve relevant docs
-        hits = self.indexer.search(question, top_k=6)
+        hits = self.indexer.search(question, top_k=10)
 
         if not hits:
             return (

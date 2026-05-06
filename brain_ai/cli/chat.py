@@ -122,8 +122,39 @@ def _print_routing_diagram(result: dict):
 
     console.print(route_text)
 
+    # Show [ASK:] callbacks if any
+    cross_asks = result.get("cross_hive_asks", [])
+    if cross_asks:
+        for ask in cross_asks:
+            ask_text = Text()
+            target = ask.get("target", "?")
+            ask_color = HIVE_COLORS.get(target, "white")
+            ask_text.append("  ↪ ", style="dim")
+            ask_text.append(f"[ASK:{target.upper()}]", style=f"bold {ask_color}")
+            question = ask.get("question", "")
+            if len(question) > 60:
+                question = question[:60] + "..."
+            ask_text.append(f" {question}", style="dim")
+            console.print(ask_text)
+
+    # Show code boundary crossings if any
+    code_boundaries = result.get("code_boundaries", [])
+    if code_boundaries:
+        for bnd in code_boundaries:
+            bnd_text = Text()
+            target = bnd.get("target_hive", "?")
+            bnd_color = HIVE_COLORS.get(target, "white")
+            pattern = bnd.get("pattern", "?")
+            source = bnd.get("source_file", "")
+            bnd_text.append("  🔗 ", style="dim")
+            bnd_text.append(f"[BOUNDARY:{target.upper()}]", style=f"bold {bnd_color}")
+            bnd_text.append(f" {pattern}", style="dim italic")
+            if source:
+                bnd_text.append(f" (from {source})", style="dim")
+            console.print(bnd_text)
+
     # Show full tree only for cross-hive activity
-    if not consulted and not chain:
+    if not consulted and not chain and not cross_asks and not code_boundaries:
         return
 
     tree = Tree(
@@ -131,15 +162,27 @@ def _print_routing_diagram(result: dict):
         guide_style="dim",
     )
 
-    # Router node
-    router_node = tree.add(Text("🔀 HiveRouter", style="bold cyan"))
+    # Gateway node
+    gw_label = Text("🔀 Gateway", style="bold cyan")
+    gw_node = tree.add(gw_label)
 
     # Primary hive
     hive_color = HIVE_COLORS.get(hive, "white")
     primary_label = Text(f"🐝 {hive.upper()} ", style=f"bold {hive_color}")
-    primary_label.append("← primary", style="dim")
-    primary_node = router_node.add(primary_label)
-    primary_node.add(Text(f"⚙️  {agent.capitalize()} Agent", style="dim"))
+    primary_label.append(f"({agent} agent)", style="dim")
+    primary_node = gw_node.add(primary_label)
+
+    # [ASK:] callbacks (agent-initiated, inline)
+    if cross_asks:
+        for ask in cross_asks:
+            target = ask.get("target", "?")
+            a_color = HIVE_COLORS.get(target, "white")
+            question = ask.get("question", "")
+            if len(question) > 70:
+                question = question[:70] + "..."
+            a_label = Text(f"↩️  [ASK:{target.upper()}] ", style=f"bold {a_color}")
+            a_label.append(question, style="dim italic")
+            primary_node.add(a_label)
 
     # Delegation chain (explicit [DELEGATE:] hops)
     if chain:
@@ -147,22 +190,48 @@ def _print_routing_diagram(result: dict):
             hop_color = HIVE_COLORS.get(hop, "white")
             hop_label = Text(f"🔗 {hop.upper()} ", style=f"bold {hop_color}")
             hop_label.append("← delegated", style="dim yellow")
-            router_node.add(hop_label)
+            gw_node.add(hop_label)
 
-    # Consulted hives (proactive discovery)
-    if consulted:
+    # Code boundary crossings (coder-detected, evidence-based)
+    if code_boundaries:
+        for bnd in code_boundaries:
+            target = bnd.get("target_hive", "?")
+            b_color = HIVE_COLORS.get(target, "white")
+            pattern = bnd.get("pattern", "?")
+            source = bnd.get("source_file", "")
+            b_label = Text(f"🔗 [BOUNDARY:{target.upper()}] ", style=f"bold {b_color}")
+            b_label.append(pattern, style="dim italic")
+            if source:
+                b_label.append(f" ← {source}", style="dim")
+            primary_node.add(b_label)
+
+    # Consulted hives (proactive discovery) — nested under primary hive
+    consulted_details = result.get("consulted_details", [])
+    if consulted_details:
+        for cd in consulted_details:
+            c_name = cd.get("hive", "?")
+            c_question = cd.get("question", "")
+            c_color = HIVE_COLORS.get(c_name, "white")
+            if len(c_question) > 70:
+                c_question = c_question[:70] + "..."
+            c_label = Text(f"🐝 {c_name.upper()} ", style=f"bold {c_color}")
+            c_label.append(c_question, style="dim italic")
+            primary_node.add(c_label)
+    elif consulted:
         for c in consulted:
             c_color = HIVE_COLORS.get(c, "white")
             c_label = Text(f"🐝 {c.upper()} ", style=f"bold {c_color}")
             c_label.append("← consulted", style="dim green")
-            router_node.add(c_label)
+            primary_node.add(c_label)
 
     # Synthesis step
-    all_sources = [hive] + chain + consulted
+    asked_hives = list({a.get("target", "") for a in cross_asks})
+    boundary_hives = list({b.get("target_hive", "") for b in code_boundaries})
+    all_sources = [hive] + chain + consulted + asked_hives + boundary_hives
     if len(all_sources) > 1:
-        synth_label = Text("✨ Synthesized Response ", style="bold white")
-        synth_label.append(f"({len(all_sources)} hives)", style="dim")
-        router_node.add(synth_label)
+        synth_label = Text("✨ Response ", style="bold white")
+        synth_label.append(f"({len(all_sources)} hives combined)", style="dim")
+        gw_node.add(synth_label)
 
     console.print()
     console.print(Panel(tree, title="🗺️  Routing Flow", border_style="dim", padding=(0, 1)))
@@ -392,6 +461,7 @@ def _build_mermaid(result: dict) -> str:
     agent = result.get("agent", "brain")
     consulted = result.get("consulted_hives", [])
     chain = result.get("delegation_chain", [])
+    cross_asks = result.get("cross_hive_asks", [])
 
     lines = ["```mermaid", "flowchart TD"]
     lines.append('    Q["📨 User Question"]')
@@ -410,8 +480,16 @@ def _build_mermaid(result: dict) -> str:
         lines.append(f'    {node}["{c.upper()} 🐝<br/>consulted"]')
         lines.append(f"    R -->|consult| {node}")
 
+    for i, ask in enumerate(cross_asks):
+        target = ask.get("target", "?")
+        node = f"A{i}"
+        lines.append(f'    {node}["{target.upper()} ↩️<br/>asked"]')
+        lines.append(f"    P -->|ASK| {node}")
+        lines.append(f"    {node} -->|answer| P")
+
+    asked_hives = [f"A{i}" for i in range(len(cross_asks))]
     all_sources = ["P"] + [f"D{i}" for i in range(len(chain))] + [f"C{i}" for i in range(len(consulted))]
-    if len(all_sources) > 1:
+    if len(all_sources) > 1 or asked_hives:
         lines.append('    S["✨ Synthesized Response"]')
         for src in all_sources:
             lines.append(f"    {src} --> S")

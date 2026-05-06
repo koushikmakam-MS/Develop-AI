@@ -1,6 +1,6 @@
 # 🧠 BCDR DeveloperAI - Azure Backup Management AI Assistant
 
-Multi-agent **Hive Architecture** powered by Azure AI Foundry (GPT-4o) — a network of 9 domain-specialized agent clusters that collaborate across BCDR service boundaries. A **Gateway Agent** performs two-stage routing (fast topic matching → LLM tiebreaker) for accurate domain classification. Each hive has its own BrainAgent, docs, code index, and vector collections. A **Discovery Store** (SQLite) auto-extracts routing topics from indexed content to keep routing fresh. Connects to Azure DevOps documentation and Kusto for intelligent project assistance and debugging. Optionally extends to Microsoft Teams as a bot.
+Multi-agent **Hive Architecture** powered by Azure AI Foundry (GPT-4o) — a network of 9 domain-specialized agent clusters that collaborate across BCDR service boundaries. A **Gateway Agent** performs two-stage routing (fast topic matching → LLM tiebreaker) with **anchor term disambiguation** for accurate domain classification. Each hive has its own BrainAgent, docs, code index, and vector collections. A **Discovery Store** (SQLite) auto-extracts routing topics and **code namespaces** from indexed content for automatic cross-service boundary detection. Connects to Azure DevOps documentation and Kusto for intelligent project assistance and debugging. Optionally extends to Microsoft Teams as a bot.
 
 ## 🐝 Agent Hive Architecture
 
@@ -9,10 +9,15 @@ The system uses a **Hive Architecture** — a network of domain-specialized agen
 ### Key Features
 
 - **Gateway Agent** — two-stage routing: fast topic keyword match (zero LLM cost) → LLM tiebreaker only when ambiguous
-- **Discovery Store** — SQLite-backed auto-topic extraction from indexed content, freshness tracking, staleness warnings
+- **Anchor Terms** — high-weight domain-specific terms (e.g., "backup vault" → DPP, "recovery services vault" → RSV) prevent routing confusion between similar services
+- **Discovery Store** — SQLite-backed auto-topic extraction from indexed content, freshness tracking, staleness warnings, and **namespace-to-hive mapping** for boundary detection
+- **Doc + Code Synthesis** — knowledge agent answers are always enriched with source code context from the coder agent, producing unified responses with both architecture concepts and concrete implementation details
+- **Auto Boundary Detection** — code namespaces, API routes, and proxy classes are extracted during indexing and stored in the discovery store; the coder agent uses regex + LLM fallback to detect cross-service references automatically
+- **Cross-Service Code Resolution** — when a boundary crossing is detected (e.g., DPP code references a Common library), the system calls the target hive's coder to get the full context
 - **Config-driven hives** — each hive defined in `config.yaml` → `hives.definitions`
 - **Proactive cross-hive discovery** — the router analyzes primary responses for cross-service references and automatically fans out targeted sub-questions to other hives
-- **Explicit delegation** — agents can emit `[DELEGATE:<hive>]` signals when they detect cross-domain needs
+- **Cross-hive callback (`[ASK:]`)** — agents can query other hives mid-response and get answers back inline, producing ONE cohesive response instead of post-hoc synthesis
+- **Explicit delegation (`[DELEGATE:]`)** — agents can emit `[DELEGATE:<hive>]` signals for full hand-off when the question is entirely another domain's territory
 - **Multi-hive synthesis** — responses from multiple services are unified into a single end-to-end flow
 - **`/save` command** — export any response as rich Markdown with Mermaid routing diagrams and metadata
 - **Backward compatible** — set `hives.enabled: false` to use the classic single-BrainAgent mode
@@ -97,11 +102,11 @@ graph TB
     Router --> DM_Brain
     Router --> MON_Brain
 
-    DPP_Brain <-. "cross-hive" .-> RSV_Brain
-    DPP_Brain <-. "cross-hive" .-> PROT_Brain
-    RSV_Brain <-. "cross-hive" .-> COM_Brain
-    DPP_Brain <-. "cross-hive" .-> PIT_Brain
-    DPP_Brain <-. "cross-hive" .-> DM_Brain
+    DPP_Brain <-. "[ASK:]" .-> RSV_Brain
+    DPP_Brain <-. "[ASK:]" .-> PROT_Brain
+    RSV_Brain <-. "[ASK:]" .-> COM_Brain
+    DPP_Brain <-. "[ASK:]" .-> PIT_Brain
+    DPP_Brain <-. "[ASK:]" .-> DM_Brain
 
     style Gateway fill:#fff3e0,stroke:#e65100,color:#000
     style DPP_Hive fill:#e3f2fd,stroke:#1565c0,color:#000
@@ -119,12 +124,15 @@ graph TB
 
 | Layer | Role | Details |
 |-------|------|---------|
-| **Gateway Agent** | Two-stage routing | Stage 1: scores all hives via topic keyword matching (exact phrase = 3pts, partial word = 1.5pts). If one hive wins by 2× margin → routes directly (zero LLM cost). Stage 2: LLM tiebreaker with only the top 4 candidates for ambiguous queries. |
-| **Discovery Store** | Auto-topic extraction & freshness | SQLite DB tracks per-hive index metadata, auto-extracted topics (via LLM sampling of ChromaDB content), and staleness. Topics are merged with config.yaml at hive init. |
+| **Gateway Agent** | Two-stage routing | Stage 1: scores all hives via topic keyword matching (anchor terms = 5pts, exact phrase = 3pts, partial word = 1.5pts). If one hive wins by 2× margin → routes directly (zero LLM cost). Stage 2: LLM tiebreaker with only the top 4 candidates for ambiguous queries. |
+| **Discovery Store** | Auto-topic extraction & freshness | SQLite DB tracks per-hive index metadata, auto-extracted topics (via LLM sampling of ChromaDB content), namespace-to-hive mappings for boundary detection, and staleness. Topics are merged with config.yaml at hive init. |
 | **Top-Level Router** | Cross-hive orchestration | Dispatches to the Gateway-selected hive, handles delegation signals, triggers proactive discovery, and synthesizes multi-hive responses. |
-| **Hive Brain** | Domain-local orchestrator | Each hive has its own Brain Agent that routes internally to its Knowledge, Debug, and Coder agents — scoped to that domain's docs, code, and Kusto tables. |
+| **Hive Brain** | Domain-local orchestrator | Each hive has its own Brain Agent that routes internally to its Knowledge, Debug, and Coder agents — scoped to that domain's docs, code, and Kusto tables. Always combines doc + code for deeper answers. |
+| **Auto Boundary Detection** | Cross-service code awareness | During indexing, C# namespaces, API routes, and proxy classes are extracted and stored in the discovery store. At query time, the coder agent uses regex pattern matching on code chunks + file-level imports metadata to detect cross-hive references. If regex finds nothing, an LLM fallback analyzes the code for implicit dependencies (REST calls, queues, comments). |
+| **Cross-Service Resolution** | Boundary code context | When boundaries are detected, the system calls the target hive's coder (`analyze_simple`) to get code context without recursion, then includes that cross-service context in the LLM prompt for a complete end-to-end answer. |
 | **Proactive Discovery** | Automatic cross-service consultation | After getting the primary answer, the router analyzes it for references to other services and fans out targeted sub-questions to those hives automatically. |
-| **Cross-Hive Delegation** | Agent-to-agent signals | Agents can emit `[DELEGATE:<hive>] <context>` when they detect the answer requires another domain. The router intercepts and orchestrates. |
+| **Cross-Hive Callback** | Agent-initiated `[ASK:]` | Agents emit `[ASK:<hive>] <question>` mid-response to query another domain. The Hive intercepts, resolves via Gateway callback, re-injects the answer, and lets the agent write ONE cohesive response. Max 3 rounds, no recursive callbacks. |
+| **Cross-Hive Delegation** | Agent-to-agent hand-off | Agents emit `[DELEGATE:<hive>] <context>` for full hand-off when the question is entirely outside their domain. The router intercepts and orchestrates. |
 | **Multi-Hive Synthesis** | Unified response | All responses are synthesized into a single end-to-end flow with cross-service interactions clearly documented. |
 
 ### Active Hives (9 domains)
@@ -145,12 +153,13 @@ graph TB
 
 > **User:** _"A backup job for SQL on Azure VM failed with error code `UserErrorVmNotFound`. The job ID is `abc-123`. What went wrong?"_
 >
-> 1. **Router** → classifies as DPP + Protection concern → dispatches to **DPP Hive**
-> 2. **DPP Debug Agent** → queries Kusto, finds the job failed during VM snapshot phase, error originates from Protection layer
-> 3. **DPP Brain** → recognizes cross-hive dependency → delegates to **Protection Hive**
-> 4. **Protection Debug Agent** → queries workload-specific Kusto tables, finds the VM was deallocated at snapshot time
-> 5. **Protection Brain** → also checks **Common Hive** for SDK retry behavior
-> 6. **Router** → synthesizes all findings: _"The backup failed because the VM was deallocated. The Protection agent attempted 3 retries (Common SDK retry policy) but the VM never came back online. Actionable fix: ensure VM is running or configure pre-backup scripts."_
+> 1. **Gateway** → topic match scores DPP highest ("backup job", "UserError") → dispatches to **DPP Hive**
+> 2. **DPP Debug Agent** → queries Kusto, finds the job failed during VM snapshot phase
+> 3. **DPP Agent** emits `[ASK:protection] How does the workload plugin handle VM snapshot failures?`
+> 4. **Hive intercepts** → calls **Protection Hive** via Gateway callback → gets answer about VM deallocated state
+> 5. **DPP Agent** receives the answer inline → also emits `[ASK:common] What SDK retry policy applies?`
+> 6. **Hive intercepts** → calls **Common Hive** → gets answer about 3-retry exponential backoff
+> 7. **DPP Agent** writes ONE cohesive response: _"The backup failed because the VM was deallocated. The Protection workload plugin attempted 3 retries (Common SDK exponential backoff) but the VM never came back online. Fix: ensure VM is running or configure pre-backup scripts."_
 
 ### Design Principles
 
@@ -173,7 +182,7 @@ graph TB
 | `brain_ai/cli/main.py` | Unified CLI (`brainai chat`, `status`, `gateway-test`, etc.) |
 | `brain_ai/cli/chat.py` | Rich interactive chat with `/save`, `/status`, routing diagrams |
 | `scripts/run_hive_index.py` | Index code for all hives with `--refresh-topics` support |
-| `tests/test_hive.py` | 188 unit tests for the hive architecture |
+| `tests/test_hive.py` | 195 unit tests for the hive architecture |
 
 ### Quick Start
 

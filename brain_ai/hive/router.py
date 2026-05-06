@@ -89,16 +89,21 @@ The primary service ({primary_hive} — {primary_display}) answered:
 Other available services you can consult:
 {other_hives_summary}
 
-Your job: Identify which OTHER services are referenced or would be needed
-to build a complete end-to-end understanding. For each, generate a
-targeted question that will retrieve the most relevant information.
+Your job: Identify which OTHER services are EXPLICITLY referenced or
+directly called by the primary response. Only consult another service
+if the primary response clearly mentions it by name or describes a
+cross-service API call, data flow, or dependency to that specific service.
 
 RULES:
-- Only include services that are GENUINELY needed for a complete answer.
+- Default to NONE. Only add cross-service lookups when ESSENTIAL.
+- Do NOT consult other services just because they exist in the same domain
+  (e.g. do NOT consult RSV for a DPP question or vice versa unless the
+  response explicitly references cross-vault interactions).
 - Do NOT re-ask the same question — make each sub-question SPECIFIC to
   what that service uniquely knows (e.g. its internal implementation,
   API contracts, data flow).
 - If the primary answer is fully self-contained, respond with NONE.
+- If in doubt, respond with NONE.
 - Maximum 3 cross-service lookups.
 
 Respond in EXACTLY this format (one per line, no other text):
@@ -155,6 +160,21 @@ class HiveRouter:
         # Conversation history for routing context
         self._conversation_history: List[Dict[str, str]] = []
         self._last_hive: Optional[str] = None
+
+        # Wire cross-hive callback into every hive so agents can [ASK:]
+        for hive in self.registry:
+            hive.set_cross_hive_callback(self._resolve_cross_hive_ask)
+
+        # Build boundary map: pattern → hive_name (for code-boundary detection)
+        boundary_map = self._build_boundary_map()
+        if boundary_map:
+            for hive in self.registry:
+                hive.set_boundary_config(boundary_map, self._resolve_cross_hive_ask)
+            log.info(
+                "Code boundary map: %d patterns across %d hive(s)",
+                len(boundary_map),
+                len({v for v in boundary_map.values()}),
+            )
 
         log.info(
             "HiveRouter initialized — %d hive(s): %s",
@@ -273,6 +293,76 @@ class HiveRouter:
             conversation_history=self._conversation_history,
         )
 
+    # ── Cross-hive callback (for [ASK:] protocol) ──────────────────
+
+    def _build_boundary_map(self) -> Dict[str, str]:
+        """Build a mapping of namespace/pattern → hive name for boundary detection.
+
+        First tries the discovery store (auto-extracted namespaces from code indexing).
+        Falls back to ``scope.boundary_patterns`` from config if the store is empty.
+        """
+        # Try auto-detected namespaces from discovery store
+        try:
+            from brain_ai.hive.discovery_store import DiscoveryStore
+            ds = DiscoveryStore()
+            ns_map = ds.get_namespace_map()
+            ds.close()
+            if ns_map:
+                log.info("Boundary map: %d namespaces from discovery store", len(ns_map))
+                return ns_map
+        except Exception as e:
+            log.debug("Could not read discovery store for namespaces: %s", e)
+
+        # Fallback: config-based boundary_patterns
+        boundary_map: Dict[str, str] = {}
+        hive_defs = self.cfg.get("hives", {}).get("definitions", {})
+        for hive_name, hive_cfg in hive_defs.items():
+            patterns = hive_cfg.get("scope", {}).get("boundary_patterns", [])
+            for pattern in patterns:
+                boundary_map[pattern] = hive_name
+        return boundary_map
+
+    def _resolve_cross_hive_ask(
+        self, target_hive: str, question: str
+    ) -> Dict[str, Any]:
+        """Resolve a cross-hive callback from an agent.
+
+        Used for both [ASK:] protocol and boundary resolution.
+        Calls the target hive's coder agent directly (no routing, no
+        further boundary detection) to prevent infinite recursion.
+        """
+        hive = self.registry.get(target_hive)
+        if hive is None:
+            log.warning("[ASK:%s] — unknown hive, ignoring.", target_hive)
+            return {
+                "hive": target_hive,
+                "agent": "none",
+                "response": f"Domain '{target_hive}' is not available.",
+            }
+
+        log.info("[ASK:%s] resolving: %s", target_hive, question[:80])
+
+        # Call the target hive's coder directly to avoid recursion.
+        # Use analyze_simple() — no boundary detection, no callbacks.
+        coder = hive.brain._agents.get("coder")
+        if coder:
+            try:
+                response = coder.analyze_simple(question, [])
+                return {"hive": target_hive, "agent": "coder", "response": response}
+            except Exception as e:
+                log.warning("[ASK:%s] coder failed: %s, falling back to knowledge", target_hive, e)
+
+        # Fallback to knowledge agent directly
+        knowledge = hive.brain._agents.get("knowledge")
+        if knowledge:
+            try:
+                response, _ = knowledge.answer_with_confidence(question, [])
+                return {"hive": target_hive, "agent": "knowledge", "response": response}
+            except Exception as e:
+                log.warning("[ASK:%s] knowledge failed: %s", target_hive, e)
+
+        return {"hive": target_hive, "agent": "none", "response": "No agents available."}
+
     # ── Proactive cross-hive discovery ───────────────────────────────
 
     def _proactive_discovery(
@@ -320,12 +410,16 @@ class HiveRouter:
             additional_responses=additional_responses,
         )
 
-        consulted = [hive_name for hive_name, _, _ in additional_responses]
+        consulted = [
+            {"hive": hive_name, "question": sub_q}
+            for hive_name, sub_q, _ in additional_responses
+        ]
         return {
             "hive": primary_hive.name,
             "agent": result.get("agent", "unknown"),
             "response": synthesized,
-            "consulted_hives": consulted,
+            "consulted_hives": [c["hive"] for c in consulted],
+            "consulted_details": consulted,
             "delegation_chain": result.get("delegation_chain", []),
         }
 

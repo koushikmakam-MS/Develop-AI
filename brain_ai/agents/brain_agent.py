@@ -23,41 +23,29 @@ from brain_ai.llm_client import LLMClient
 
 log = logging.getLogger(__name__)
 
-ROUTER_SYSTEM_PROMPT = """You are the Brain Agent, a routing orchestrator for the Azure Backup Management AI assistant.
+ROUTER_SYSTEM_PROMPT = """You are a message classifier for an Azure Backup technical assistant.
 
-Your ONLY job is to classify the user's message and decide which specialized agent should handle it.
+Classify the user's message into one category based on intent.
 
-Available agents:
-- "knowledge": For questions about the project, architecture, features, processes, documentation, how-to, configuration, design, etc.  The user is ASKING for information; they are not providing corrections or managing docs.
-- "debug": For debugging errors, troubleshooting issues, running Kusto/KQL queries, investigating failures, analyzing logs, or any request that involves diagnosing a problem.  Also handles ANY follow-up to a debug conversation (e.g. providing a time range, answering a clarifying question from the debug agent, saying "go ahead", "yes", "30 days", etc.).
-- "coder": For tracing code paths, understanding source code flows, finding which code handles a specific operation or error, reviewing how a feature is implemented in the BMS service codebase, identifying root causes at the code level, explaining class/method call chains, or any question about the actual source code (C#, Python, etc.).
-- "knowledge_updater": For ALL documentation management operations.  This includes:
-  • Correcting information ("that's wrong", "actually it works like", "the doc is incorrect")
-  • Updating / fixing docs ("please update", "fix the documentation", "this should say")
-  • Creating new docs ("create doc", "new doc", "draft a doc", "save doc", "add doc")
-  • Submitting changes ("submit", "agree", "create pr", "push it", "lgtm", "ship it")
-  • Discarding changes ("discard", "cancel changes", "drop corrections")
-  • Reviewing pending changes ("what's pending", "show corrections")
-  • Any follow-up to a knowledge_updater conversation where the user is confirming, accepting, or providing additional content for a doc operation.
+Categories:
+- "knowledge": Questions about architecture, features, documentation, design, configuration.
+- "debug": Troubleshooting errors, Kusto queries, log analysis, diagnosing failures.
+- "coder": Questions about source code, call chains, class/method implementations.
+- "knowledge_updater": Correcting docs, creating docs, submitting doc changes, confirming pending edits.
 
-IMPORTANT ROUTING RULES:
-1. Look at the conversation history.  If the previous assistant response came from a specific agent, the current message is very likely a follow-up — route to the SAME agent unless the user clearly changes topic.
-2. Short replies like time ranges ("30 days"), confirmations ("yes", "go ahead", "proceed"), or GUIDs are almost always follow-ups to the currently active agent.
-3. If the knowledge_updater previously offered to create a doc and the user responds with "yes", "create doc", "save doc", "go ahead", etc., route to "knowledge_updater".
-4. If there are pending corrections and the user says "submit", "agree", "discard", etc., route to "knowledge_updater".
-5. Route to "coder" ONLY when the user is specifically asking about source code, call chains, or implementation details in the codebase — NOT for doc operations.
-6. Only route to "knowledge" if the user is clearly asking a NEW informational question.
+Rules:
+1. If conversation history shows a previous agent handled the last turn, route follow-ups to the same agent.
+2. Short replies (time ranges, confirmations, GUIDs) are follow-ups to the active agent.
+3. Route to "coder" only for explicit source code questions.
+4. Route to "knowledge_updater" for doc corrections, submissions, or confirmations of pending changes.
 
 {state_context}
 
-Respond with EXACTLY one of these formats (no other text):
+Respond with EXACTLY one line:
 ROUTE:knowledge
 ROUTE:debug
 ROUTE:coder
 ROUTE:knowledge_updater
-
-If the message is a greeting or unclear AND there is no active conversation, default to:
-ROUTE:knowledge
 """
 
 
@@ -122,55 +110,86 @@ class BrainAgent:
             self._peer_hive_names,
         )
 
+    def set_boundary_config(
+        self,
+        boundary_map: Dict[str, str],
+        boundary_callback,
+    ):
+        """Wire code-boundary detection into the coder agent.
+
+        Parameters
+        ----------
+        boundary_map : dict
+            Maps boundary patterns (namespace prefixes, class names) to hive names.
+        boundary_callback : callable(target_hive, question) -> dict
+            Called when the coder detects a cross-hive code reference.
+        """
+        coder = self._agents.get("coder")
+        if coder is None:
+            return
+        coder.set_boundary_map(boundary_map, self.hive_name or "unknown")
+        coder.set_boundary_callback(boundary_callback)
+        log.info(
+            "BrainAgent boundary config set: %d patterns",
+            len(boundary_map),
+        )
+
     def _build_delegation_hint(self) -> str:
-        """Build a delegation instruction for sub-agent system prompts.
+        """Build delegation + callback instructions for sub-agent system prompts.
 
         If this BrainAgent is part of a hive and peers exist, agents
-        are taught to emit ``[DELEGATE:<hive>]`` when they detect
-        the answer requires another domain.
+        are taught two cross-domain protocols:
+
+        1. ``[ASK:<hive>] <question>`` — **callback**: ask another domain
+           a question and get the answer back so you can write ONE cohesive
+           response.  Use this when you NEED information from another domain
+           to complete your answer.
+
+        2. ``[DELEGATE:<hive>] <context>`` — **hand-off**: transfer the
+           entire question to another domain (you stop, they take over).
+           Use this only when the question is completely outside your domain.
         """
         if not self._peer_hive_names:
             return ""
         peers = ", ".join(self._peer_hive_names)
         return (
-            f"\n\nCROSS-DOMAIN DELEGATION:\n"
+            f"\n\nCROSS-DOMAIN COLLABORATION:\n"
             f"You are part of the '{self.hive_name}' domain. "
-            f"Other domains available: [{peers}].\n"
-            f"If you determine the user's question is OUTSIDE your domain "
-            f"or requires knowledge from another domain, include this signal "
-            f"at the END of your response:\n"
+            f"Other domains available: [{peers}].\n\n"
+            f"OPTION 1 — ASK (preferred, gets you the answer inline):\n"
+            f"If you need specific information from another domain to enrich "
+            f"your answer, emit this signal INLINE in your response:\n"
+            f"[ASK:<domain_name>] <specific question for that domain>\n"
+            f"Example: [ASK:dataplane] How does the data plane handle "
+            f"incremental snapshots for DPP backup instances?\n"
+            f"The system will fetch the answer and let you rewrite your "
+            f"response with the combined knowledge. Max 2 [ASK:] signals per response.\n\n"
+            f"OPTION 2 — DELEGATE (full hand-off, you stop):\n"
+            f"If the question is ENTIRELY outside your domain, include "
+            f"this at the END of your response:\n"
             f"[DELEGATE:<domain_name>] <brief context for the other domain>\n"
             f"Example: [DELEGATE:protection] The user is asking about VM "
-            f"snapshot failures during backup — need workload-specific analysis.\n"
-            f"Only delegate when truly necessary — most questions should be "
-            f"answered within your domain."
+            f"snapshot failures during backup — need workload-specific analysis.\n\n"
+            f"RULES:\n"
+            f"- Prefer [ASK:] when you can still provide useful context yourself.\n"
+            f"- Use [DELEGATE:] only when the question is 100% another domain's territory.\n"
+            f"- Most questions should be answered within your domain without either signal."
         )
 
     def _route(self, message: str) -> str:
         """Use LLM to classify which agent should handle the message."""
         try:
-            # Build compact routing history: agent tags + truncated content
-            # so the router sees which agent handled each turn without being
-            # overwhelmed by long KQL results or doc text.
+            # Build minimal routing history — strip agent tags and keep only
+            # short summaries to avoid triggering content filters
             routing_history = []
-
-            # Lead with the last-agent context so the LLM sees it first
-            if self._last_agent:
-                routing_history.append({
-                    "role": "system",
-                    "content": (
-                        f"[CONTEXT: The MOST RECENT turn was handled by the '{self._last_agent}' agent. "
-                        f"If the user's new message looks like a follow-up, route to '{self._last_agent}'.]"
-                    ),
-                })
-
-            # Append conversation history with truncated content for the router
-            for msg in self._conversation_history:
+            for msg in self._conversation_history[-6:]:  # Last 3 turns max
                 content = msg["content"]
-                # Keep first 300 chars — enough for agent tag + gist, but
-                # won't flood the router with KQL tables or full doc text
-                if len(content) > 300:
-                    content = content[:300] + "...(truncated)"
+                # Strip [Agent: ...] prefix
+                if content.startswith("[Agent:"):
+                    content = content.split("]", 1)[-1].strip()
+                # Truncate heavily for the router
+                if len(content) > 150:
+                    content = content[:150] + "..."
                 routing_history.append({"role": msg["role"], "content": content})
 
             # Build dynamic state context so the router knows about pending ops
@@ -187,6 +206,10 @@ class BrainAgent:
                     "and is waiting for the user to confirm (e.g. 'create doc', 'yes', 'save doc')."
                 )
             state_context = "\n".join(state_lines) if state_lines else ""
+
+            # Add last-agent context to system prompt (not as mid-conversation system message)
+            if self._last_agent:
+                state_context += f"\nLast turn was handled by: {self._last_agent}. Follow-ups should route there."
 
             # Inject state into the system prompt
             system_prompt = ROUTER_SYSTEM_PROMPT.format(state_context=state_context)
@@ -222,6 +245,35 @@ class BrainAgent:
         return float(
             self.cfg.get("agents", {}).get("doc_gap_threshold", 0.50)
         )
+
+    # ── Doc + Code synthesis ──────────────────────────────────────
+
+    def _synthesize_doc_and_code(
+        self, question: str, doc_response: str, code_response: str,
+    ) -> str:
+        """Combine documentation and code analysis into one deep response."""
+        prompt = (
+            f"You have TWO expert analyses of the same question.\n\n"
+            f"## Question\n{question}\n\n"
+            f"## Documentation Analysis\n{doc_response[:4000]}\n\n"
+            f"## Source Code Analysis\n{code_response[:4000]}\n\n"
+            f"Create ONE comprehensive response that:\n"
+            f"1. Leads with the high-level architecture/concepts from the docs\n"
+            f"2. Adds concrete implementation details from the code (class names, methods, data flows)\n"
+            f"3. Highlights anything the code reveals that the docs don't cover\n"
+            f"4. Includes a Mermaid diagram if the answer involves a flow or architecture\n"
+            f"5. References both doc sources and code file paths\n\n"
+            f"Do NOT mention that two analyses were combined — present it as one unified answer."
+        )
+        try:
+            return self.llm.generate(
+                message=prompt,
+                system="You are a senior engineer synthesizing documentation and source code into a deep technical explanation.",
+                history=[],
+            )
+        except Exception as e:
+            log.warning("Doc+code synthesis failed: %s — returning doc response.", e)
+            return doc_response
 
     _DOC_GAPS_FILE = "doc_gaps.json"
 
@@ -290,6 +342,7 @@ class BrainAgent:
             }
 
         # Dispatch to the right agent
+        extra_meta: Dict[str, Any] = {}
         try:
             if agent_name == "knowledge":
                 response_text, confidence = agent.answer_with_confidence(
@@ -313,36 +366,62 @@ class BrainAgent:
                         f"or I've logged it to `doc_gaps.json` for later review."
                     )
 
-                # Fallback: if knowledge docs are low-relevance, automatically
-                # route to coder agent for a source-code-based answer.
-                if confidence < threshold and "coder" in self._agents:
+                # Always combine doc + code for deeper analysis
+                if "coder" in self._agents:
                     log.info(
-                        "Knowledge confidence %.3f below threshold %.2f "
-                        "— auto-routing to coder agent.",
-                        confidence, threshold,
+                        "Enriching with code context (knowledge conf=%.3f).",
+                        confidence,
                     )
-                    coder = self._agents["coder"]
-                    coder_response = coder.analyze(message, self._conversation_history)
-                    if coder_response and not coder_response.startswith("I don't have any indexed source code"):
-                        agent_name = "coder"
-                        response_text = coder_response
-                    else:
-                        # Neither docs nor code had a good answer
-                        response_text = (
-                            "I couldn't find relevant information in the project documentation "
-                            "or the source code for this query. You could try:\n"
-                            "- Rephrasing your question\n"
-                            "- Checking if the docs/code have been indexed "
-                            "(`python run_index.py` / `python run_code_index.py`)\n"
-                            "- Asking the **debug agent** if this is a runtime issue"
+                    try:
+                        coder = self._agents["coder"]
+                        coder_response, boundaries = coder.analyze_with_boundaries(
+                            message, self._conversation_history
                         )
+                        if boundaries:
+                            extra_meta["code_boundaries"] = boundaries
+                        has_code = (
+                            coder_response
+                            and not coder_response.startswith("I don't have any indexed source code")
+                        )
+
+                        if has_code and confidence >= threshold:
+                            # Good docs + code → synthesize both
+                            response_text = self._synthesize_doc_and_code(
+                                message, response_text, coder_response,
+                            )
+                            agent_name = "knowledge+coder"
+                        elif has_code and confidence < threshold:
+                            # Weak docs + good code → synthesize but lead with code
+                            response_text = self._synthesize_doc_and_code(
+                                message, response_text, coder_response,
+                            )
+                            agent_name = "knowledge+coder"
+                        elif not has_code and confidence < threshold:
+                            # Weak docs + no code
+                            response_text = (
+                                "I couldn't find strong matches in the project documentation "
+                                "or source code for this query. You could try:\n"
+                                "- Rephrasing your question\n"
+                                "- Checking if the docs/code have been indexed "
+                                "(`python run_index.py` / `python run_code_index.py`)\n"
+                                "- Asking the **debug agent** if this is a runtime issue"
+                            )
+                        # else: good docs, no code → keep knowledge response as-is
+                    except Exception as e:
+                        log.warning("Code enrichment failed (non-fatal): %s", e)
                 # Append the doc-gap notice to whichever response we ended up with
                 if doc_gap_notice:
                     response_text += doc_gap_notice
             elif agent_name == "debug":
                 response_text = agent.debug(message, self._conversation_history)
             elif agent_name == "coder":
-                response_text = agent.analyze(message, self._conversation_history)
+                response_text, boundaries = agent.analyze_with_boundaries(
+                    message, self._conversation_history
+                )
+                if boundaries:
+                    agent_name = "coder"
+                    # Attach boundary metadata so CLI can display them
+                    extra_meta["code_boundaries"] = boundaries
             elif agent_name == "knowledge_updater":
                 response_text = agent.handle(message, self._conversation_history)
             else:
@@ -372,10 +451,12 @@ class BrainAgent:
         # Track which agent handled this turn for routing continuity
         self._last_agent = agent_name
 
-        return {
+        result = {
             "agent": agent_name,
             "response": response_text,
         }
+        result.update(extra_meta)
+        return result
 
     def reset_conversation(self):
         """Clear conversation history."""

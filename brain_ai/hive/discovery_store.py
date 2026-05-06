@@ -67,6 +67,12 @@ class DiscoveryStore:
                 duration_s  REAL DEFAULT 0,
                 status      TEXT DEFAULT 'running'  -- 'running', 'success', 'failed'
             );
+
+            CREATE TABLE IF NOT EXISTS hive_namespaces (
+                hive_name   TEXT NOT NULL,
+                namespace   TEXT NOT NULL,
+                PRIMARY KEY (hive_name, namespace)
+            );
         """)
         self._conn.commit()
 
@@ -220,6 +226,40 @@ class DiscoveryStore:
             (hive_name, limit),
         ).fetchall()
         return [dict(r) for r in rows]
+
+    # ── Namespaces ───────────────────────────────────────────────
+
+    def set_namespaces(self, hive_name: str, namespaces: List[str]):
+        """Replace all namespaces for a hive (called after code indexing)."""
+        self._conn.execute(
+            "DELETE FROM hive_namespaces WHERE hive_name = ?", (hive_name,)
+        )
+        for ns in namespaces:
+            self._conn.execute(
+                "INSERT OR IGNORE INTO hive_namespaces (hive_name, namespace) VALUES (?, ?)",
+                (hive_name, ns),
+            )
+        self._conn.commit()
+        log.info("Stored %d namespaces for hive '%s'", len(namespaces), hive_name)
+
+    def get_namespaces(self, hive_name: str) -> List[str]:
+        """Get all namespaces declared by a hive."""
+        rows = self._conn.execute(
+            "SELECT namespace FROM hive_namespaces WHERE hive_name = ? ORDER BY namespace",
+            (hive_name,),
+        ).fetchall()
+        return [r["namespace"] for r in rows]
+
+    def get_namespace_map(self) -> Dict[str, str]:
+        """Build namespace → hive_name map from all hives.
+
+        Returns a dict where keys are namespace prefixes and values are hive names.
+        Longer (more specific) namespaces take priority when matching.
+        """
+        rows = self._conn.execute(
+            "SELECT hive_name, namespace FROM hive_namespaces ORDER BY namespace"
+        ).fetchall()
+        return {r["namespace"]: r["hive_name"] for r in rows}
 
     # ── Cleanup ─────────────────────────────────────────────────
 

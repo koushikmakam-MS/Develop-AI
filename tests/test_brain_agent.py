@@ -198,15 +198,18 @@ class TestKnowledgeCoderFallback:
 
         # Mock coder agent with a good answer
         mock_coder = MagicMock()
-        mock_coder.analyze.return_value = "Here's the code path..."
+        mock_coder.analyze_with_boundaries.return_value = ("Here's the code path...", [])
         brain._agents["coder"] = mock_coder
 
-        # Force routing to knowledge
-        brain.llm.generate = MagicMock(return_value="ROUTE:knowledge")
+        # Mock LLM for synthesis
+        brain.llm.generate = MagicMock(side_effect=[
+            "ROUTE:knowledge",              # routing call
+            "Synthesized doc+code answer",   # synthesis call
+        ])
 
         result = brain.chat("some question")
-        assert result["agent"] == "coder"
-        assert "code path" in result["response"]
+        assert result["agent"] == "knowledge+coder"
+        mock_coder.analyze_with_boundaries.assert_called_once()
 
     @patch("brain_ai.agents.brain_agent.KnowledgeAgent")
     @patch("brain_ai.agents.brain_agent.DebugAgent")
@@ -221,6 +224,7 @@ class TestKnowledgeCoderFallback:
         mock_knowledge.answer_with_confidence.return_value = ("great doc answer", 0.85)
         brain._agents["knowledge"] = mock_knowledge
 
+        # No coder agent available → stays with knowledge only
         brain.llm.generate = MagicMock(return_value="ROUTE:knowledge")
 
         result = brain.chat("well-documented question")
@@ -241,13 +245,13 @@ class TestKnowledgeCoderFallback:
         brain._agents["knowledge"] = mock_knowledge
 
         mock_coder = MagicMock()
-        mock_coder.analyze.return_value = "I don't have any indexed source code yet."
+        mock_coder.analyze_with_boundaries.return_value = ("I don't have any indexed source code yet.", [])
         brain._agents["coder"] = mock_coder
 
         brain.llm.generate = MagicMock(return_value="ROUTE:knowledge")
 
         result = brain.chat("obscure topic")
-        assert "couldn't find relevant information" in result["response"]
+        assert "couldn't find strong matches" in result["response"]
 
 
 # ── Doc gap logging ──────────────────────────────────────────────────────

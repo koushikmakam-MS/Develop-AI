@@ -41,6 +41,33 @@ def _extract_csharp_symbols(text: str) -> List[str]:
     return symbols
 
 
+# TODO: Add multi-language support — extract identifiers for Python (import/from),
+#       Java (package/import), Go (import), etc. Currently C#-only.
+def _extract_csharp_namespaces(text: str) -> List[str]:
+    """Extract namespace declarations and service identifiers from C# code.
+
+    Returns unique identifiers like:
+    ``["Microsoft.Azure.Management.Dpp", "/api/dpp/", "DppInternalProxy"]``
+
+    These are used to build the boundary map: identifier → owning hive.
+    """
+    identifiers = set()
+    # namespace declarations: namespace Microsoft.Azure.Dpp { ... }
+    # or file-scoped: namespace Microsoft.Azure.Dpp;
+    for m in re.finditer(r'^\s*namespace\s+([\w.]+)', text, re.MULTILINE):
+        identifiers.add(m.group(1))
+    # API route prefixes:  [Route("api/dpp/...")] or [HttpGet("api/...")]
+    for m in re.finditer(r'\[(?:Route|HttpGet|HttpPost|HttpPut|HttpDelete)\s*\(\s*"(/?\w+/\w+)', text):
+        route = m.group(1)
+        if not route.startswith("/"):
+            route = "/" + route
+        identifiers.add(route)
+    # Proxy/Client/Gateway class declarations that other hives may reference
+    for m in re.finditer(r'class\s+([\w]+(?:Proxy|Client|Gateway|Dispatcher))\b', text):
+        identifiers.add(m.group(1))
+    return sorted(identifiers)
+
+
 def _extract_python_symbols(text: str) -> List[str]:
     """Extract class and function names from Python code for metadata."""
     symbols = []
@@ -228,6 +255,8 @@ class CodeIndexer:
         total_chunks = 0
         total_files = len(code_files)
 
+        all_namespaces: set = set()
+
         for file_idx, code_file in enumerate(code_files):
             if (file_idx + 1) % 100 == 0 or file_idx == 0:
                 log.info("Progress: %d/%d files  (%d indexed, %d skipped, %d chunks so far)",
@@ -256,8 +285,16 @@ class CodeIndexer:
                 ext = code_file.suffix.lower()
 
                 # Extract symbols for metadata
+                file_imports = ""
                 if ext == ".cs":
                     symbols = _extract_csharp_symbols(text)
+                    # Extract namespaces declared in this file
+                    file_namespaces = _extract_csharp_namespaces(text)
+                    all_namespaces.update(file_namespaces)
+                    # Capture using statements so boundary detection works
+                    # even when chunks don't contain the using block
+                    usings = re.findall(r'^\s*using\s+([\w.]+)\s*;', text, re.MULTILINE)
+                    file_imports = ", ".join(usings[:30])  # Cap at 30 to fit metadata
                 elif ext == ".py":
                     symbols = _extract_python_symbols(text)
                 else:
@@ -278,6 +315,7 @@ class CodeIndexer:
                         "total_chunks": len(chunks),
                         "chunk_label": label,
                         "symbols": ", ".join(symbols[:20]),  # Top symbols for the file
+                        "imports": file_imports,  # using/import statements for boundary detection
                     }
                     for i, (_, label) in enumerate(chunks)
                 ]
@@ -300,6 +338,7 @@ class CodeIndexer:
             "skipped": skipped,
             "total_chunks_added": total_chunks,
             "collection_total": self.collection.count(),
+            "namespaces": sorted(all_namespaces),
         }
         log.info("Code indexing complete: %s", summary)
         return summary
@@ -331,6 +370,7 @@ class CodeIndexer:
                 "file_ext": meta.get("file_ext", ""),
                 "chunk_label": meta.get("chunk_label", ""),
                 "symbols": meta.get("symbols", ""),
+                "imports": meta.get("imports", ""),
                 "score": 1 - dist,
             })
 

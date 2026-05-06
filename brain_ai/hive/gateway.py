@@ -156,6 +156,12 @@ class Gateway:
             hive_score = 0.0
             hive_matched: List[str] = []
 
+            # Anchor terms — exclusive high-confidence identifiers (weight 5.0)
+            for anchor in hive.anchor_terms:
+                if anchor in msg_lower:
+                    hive_score += 5.0
+                    hive_matched.append(f"[anchor] {anchor}")
+
             for topic in hive.topics:
                 topic_lower = topic.lower()
 

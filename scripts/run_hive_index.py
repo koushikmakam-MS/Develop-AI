@@ -103,6 +103,11 @@ def index_hive(global_cfg: dict, hive_name: str, hive_def: dict, force: bool = F
                 display_name=display_name,
                 duration_s=round(elapsed, 1),
             )
+            # Store extracted namespaces for auto boundary detection
+            namespaces = result.get("namespaces", [])
+            if namespaces:
+                ds.set_namespaces(hive_name, namespaces)
+                print(f"   📦 {len(namespaces)} namespaces stored for boundary detection")
             ds.close()
         except Exception as ds_err:
             log.warning("Could not update discovery store: %s", ds_err)
