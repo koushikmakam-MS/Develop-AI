@@ -39,11 +39,20 @@ You have access to indexed source code from the BMS repository. When answering:
    TriggerRestore), trace the full pipeline for that operation.
 
 Rules:
-- Base your answers on the actual source code provided in the context.
+- Base your answers ONLY on the actual source code provided in the context.
+- **DO NOT invent or fabricate code, class names, method names, file paths,
+  REST endpoints, route attributes, or API contracts.** If the context
+  doesn't contain a specific API/class/method, explicitly say so — do NOT
+  make up plausible-looking code.
 - If the code context doesn't contain the relevant files, say so and suggest
   which files/paths to look for.
-- Be precise with file paths and class/method names.
+- Be precise with file paths and class/method names — quote them exactly
+  as they appear in the provided context.
 - When explaining a flow, use a numbered list showing the call chain.
+- **Highlight API details ONLY when present in the context**: Show REST API
+  endpoints, HTTP methods, request/response contracts, controller action
+  signatures, and route attributes — but ONLY if they actually appear in
+  the provided code. Never invent endpoint URLs or route patterns.
 - If the user provides an error message or stack trace, match it to the code.
 - For errors with TaskIds or OperationIds, explain what operation type it maps to
   and trace the handler code for that operation.
@@ -225,11 +234,18 @@ class CoderAgent:
             len(context_block) // 1000,
         )
 
-        # Step 4: detect cross-hive code boundaries (regex first, then LLM)
+        # Step 4: detect cross-hive code boundaries
+        # Run BOTH regex (for explicit code refs) AND LLM (for semantic
+        # cross-service detection considering the user's question), then merge.
         boundaries = self._detect_boundaries(all_hits)
-        if not boundaries and self._boundary_map:
-            # Regex found nothing — try LLM-based detection
-            boundaries = self._detect_boundaries_llm(all_hits, question)
+        if self._boundary_map:
+            llm_boundaries = self._detect_boundaries_llm(all_hits, question)
+            # Merge — dedupe by target_hive (keep first/regex one if dup)
+            seen_targets = {b["target_hive"] for b in boundaries}
+            for lb in llm_boundaries:
+                if lb["target_hive"] not in seen_targets:
+                    boundaries.append(lb)
+                    seen_targets.add(lb["target_hive"])
         boundary_context = ""
         if boundaries:
             boundary_context = self._resolve_boundaries(boundaries, question)
@@ -250,7 +266,11 @@ class CoderAgent:
 
         user_message += (
             f"## User's question:\n{question}\n\n"
-            f"Trace the code path and explain the flow. "
+            f"Trace the code path and explain the flow using ONLY the code shown above. "
+            f"Quote class names, method names, file paths, and API routes EXACTLY "
+            f"as they appear — do NOT invent any. "
+            f"If the context doesn't contain a specific API endpoint, controller, "
+            f"or class needed to answer, say so explicitly rather than guessing. "
             f"If you have cross-service context, show the full end-to-end "
             f"chain including what happens when the code crosses into "
             f"another service's boundary. "
@@ -263,6 +283,26 @@ class CoderAgent:
             system=SYSTEM_PROMPT,
             history=conversation_history,
         )
+
+        # Step 6: grounding check — flag symbols not found in retrieved evidence
+        evidence_corpus = context_block + "\n" + boundary_context + "\n" + " ".join(seen_sources)
+        ungrounded = self._check_grounding(response, evidence_corpus)
+        if ungrounded:
+            log.warning(
+                "Grounding check: %d symbol(s) in response not found in retrieved code: %s",
+                len(ungrounded), ungrounded[:10],
+            )
+            warning = (
+                "\n\n---\n"
+                "> ⚠️ **Grounding warning** — the following symbols in the response above "
+                "were NOT found in the indexed source code and may be fabricated. "
+                "Treat them with caution and verify against the repo:\n"
+                + "\n".join(f"> - `{s}`" for s in ungrounded[:15])
+            )
+            if len(ungrounded) > 15:
+                warning += f"\n> - ... and {len(ungrounded) - 15} more"
+            response = response + warning
+
         return response, boundaries
 
     # ------------------------------------------------------------------
@@ -307,6 +347,11 @@ class CoderAgent:
             queries.append(
                 " ".join(operation_words)
                 + " handler orchestrator controller"
+            )
+            # Also look for API endpoints / REST contracts
+            queries.append(
+                " ".join(operation_words)
+                + " API endpoint route controller action"
             )
 
         # Deduplicate while preserving order
@@ -417,6 +462,18 @@ class CoderAgent:
         re.compile(r':\s*(I[\w]+(?:Service|Contract|Interface|Proxy))\b'),
     ]
 
+    # Generic namespaces / framework imports that appear in virtually every
+    # file and do NOT indicate a meaningful cross-service dependency.
+    _BOUNDARY_NOISE = {
+        "system", "system.collections", "system.collections.generic",
+        "system.linq", "system.text", "system.threading",
+        "system.threading.tasks", "system.io", "system.net",
+        "system.net.http", "system.componentmodel",
+        "microsoft.extensions", "microsoft.extensions.logging",
+        "microsoft.extensions.dependencyinjection",
+        "microsoft.aspnetcore", "newtonsoft.json",
+    }
+
     def _detect_boundaries(
         self, hits: List[Dict],
     ) -> List[Dict[str, str]]:
@@ -450,11 +507,19 @@ class CoderAgent:
 
             # Match references against boundary map
             for ref in references:
+                ref_lower = ref.lower()
+                # Skip generic framework namespaces
+                if ref_lower in self._BOUNDARY_NOISE:
+                    continue
+                # Also skip if any noise prefix matches the full ref
+                if any(ref_lower.startswith(n + ".") for n in self._BOUNDARY_NOISE):
+                    continue
+
                 for boundary_pattern, target_hive in self._boundary_map.items():
                     # Skip self-references
                     if target_hive == self._own_hive:
                         continue
-                    if boundary_pattern.lower() in ref.lower():
+                    if boundary_pattern.lower() in ref_lower:
                         key = f"{target_hive}::{boundary_pattern}"
                         if key not in found:
                             # Find the context line
@@ -478,7 +543,15 @@ class CoderAgent:
                 len(boundaries),
                 [(b["target_hive"], b["pattern"]) for b in boundaries],
             )
-        return boundaries[:5]  # Cap at 5 to avoid excessive fan-out
+
+        # Deduplicate: keep at most 1 boundary per target hive (most specific)
+        seen_hives: set = set()
+        deduped: List[Dict[str, str]] = []
+        for b in boundaries:
+            if b["target_hive"] not in seen_hives:
+                seen_hives.add(b["target_hive"])
+                deduped.append(b)
+        return deduped[:5]  # Cap at 5 distinct target hives
 
     def _detect_boundaries_llm(
         self, hits: List[Dict], question: str
@@ -505,16 +578,21 @@ class CoderAgent:
         code_sample = code_sample[:3000]
 
         prompt = (
-            f"Given this code from the '{self._own_hive}' service, identify if it "
-            f"calls or depends on any of these OTHER services: {available_hives}\n\n"
-            f"Look for: API calls, queue messages, HTTP requests, proxy calls, "
-            f"interface references, or any communication to another service.\n\n"
-            f"Code:\n```\n{code_sample}\n```\n\n"
-            f"User question: {question}\n\n"
-            f"Respond with ONLY a JSON array of objects. Each object must have:\n"
+            f"You are analyzing code from the '{self._own_hive}' service to find\n"
+            f"OTHER services that should be consulted to fully answer the user's question.\n\n"
+            f"Available services: {available_hives}\n\n"
+            f"User's question: {question}\n\n"
+            f"Code from '{self._own_hive}':\n```\n{code_sample}\n```\n\n"
+            f"Identify OTHER services that are relevant. Include a service when:\n"
+            f"  1. The code calls/depends on it (using statements, API calls, queue messages,\n"
+            f"     proxy calls, interface references, HTTP requests).\n"
+            f"  2. OR the user's question conceptually involves that service's domain\n"
+            f"     (e.g. a question about 'data movement' relates to a datamover service\n"
+            f"     even if the current code doesn't directly call it).\n\n"
+            f"Respond with ONLY a JSON array. Each object must have:\n"
             f'  {{"target_hive": "<hive_name>", "reason": "<brief explanation>"}}\n\n'
-            f"If no cross-service dependencies found, respond with: []\n"
-            f"IMPORTANT: Only include services from the list above. No explanation outside the JSON."
+            f"Include up to 5 services. If none are relevant, respond with: []\n"
+            f"IMPORTANT: Only include services from the available list. No text outside the JSON."
         )
 
         try:
@@ -537,7 +615,7 @@ class CoderAgent:
                 return []
 
             boundaries = []
-            for item in detected[:3]:  # Cap at 3 from LLM
+            for item in detected[:5]:  # Cap at 5 from LLM
                 target = item.get("target_hive", "")
                 reason = item.get("reason", "")
                 if target in available_hives:
@@ -567,10 +645,19 @@ class CoderAgent:
     ) -> str:
         """Resolve detected boundaries by calling target hive coders.
 
+        First asks the LLM which boundaries are actually critical for the
+        user's question, then only resolves those.
+
         Returns a formatted context string with answers from other hives.
         """
         if not self._boundary_callback:
             log.info("No boundary callback registered — skipping resolution.")
+            return ""
+
+        # ── LLM relevance gate ──────────────────────────────────────
+        boundaries = self._filter_critical_boundaries(boundaries, original_question)
+        if not boundaries:
+            log.info("LLM relevance gate: no boundaries are critical — skipping.")
             return ""
 
         sections: List[str] = []
@@ -615,3 +702,178 @@ class CoderAgent:
                 log.warning("Boundary resolution for %s failed: %s", target, e)
 
         return "\n\n".join(sections)
+
+    # ------------------------------------------------------------------
+    # LLM relevance gate for boundary crossings
+    # ------------------------------------------------------------------
+
+    _BOUNDARY_RELEVANCE_PROMPT = (
+        "You are deciding which cross-service code references are CRITICAL\n"
+        "to answer the user's question.\n\n"
+        "User's question: \"{question}\"\n\n"
+        "Detected cross-service references:\n{boundary_list}\n\n"
+        "For each reference, decide: is understanding this reference's\n"
+        "implementation ESSENTIAL to properly answer the question?\n\n"
+        "A reference is CRITICAL when:\n"
+        "- It is a domain-specific class/service that performs key logic\n"
+        "  for the operation the user asked about.\n"
+        "- Without it, the answer would be incomplete or misleading.\n\n"
+        "A reference is NOT critical when:\n"
+        "- It is a generic utility, logging, validation, or infrastructure\n"
+        "  namespace (e.g. common helpers, base classes, config readers).\n"
+        "- The user didn't ask about that part of the system.\n\n"
+        "Respond with ONLY the indices (0-based) of the CRITICAL references,\n"
+        "comma-separated. If none are critical, respond with: NONE\n\n"
+        "Example: 0,2\n"
+        "Example: NONE"
+    )
+
+    def _filter_critical_boundaries(
+        self,
+        boundaries: List[Dict[str, str]],
+        question: str,
+    ) -> List[Dict[str, str]]:
+        """Ask the LLM which detected boundaries are critical for the question."""
+        if not boundaries:
+            return []
+
+        # Build a numbered list for the LLM
+        lines = []
+        for i, b in enumerate(boundaries):
+            lines.append(
+                f"[{i}] target_hive={b['target_hive']}, "
+                f"reference={b.get('reference', b['pattern'])}, "
+                f"source_file={b.get('source_file', '?')}, "
+                f"context={b.get('context_line', '')[:120]}"
+            )
+
+        prompt = self._BOUNDARY_RELEVANCE_PROMPT.format(
+            question=question,
+            boundary_list="\n".join(lines),
+        )
+
+        try:
+            result = self.llm.generate(
+                message=prompt,
+                system="Be strict. Only mark references as critical if they are essential.",
+                history=[],
+            ).strip()
+
+            if result.upper().startswith("NONE"):
+                log.info("LLM boundary gate: none are critical.")
+                return []
+
+            # Parse comma-separated indices
+            indices = set()
+            for token in result.replace(" ", "").split(","):
+                token = token.strip()
+                if token.isdigit():
+                    idx = int(token)
+                    if 0 <= idx < len(boundaries):
+                        indices.add(idx)
+
+            critical = [boundaries[i] for i in sorted(indices)]
+            log.info(
+                "LLM boundary gate: %d/%d critical: %s",
+                len(critical), len(boundaries),
+                [(b["target_hive"], b.get("reference", b["pattern"])[:40]) for b in critical],
+            )
+            return critical
+
+        except Exception as e:
+            log.warning("LLM boundary relevance check failed: %s — keeping all.", e)
+            return boundaries  # Fallback: keep all if LLM fails
+
+    # ------------------------------------------------------------------
+    # Grounding check — flag fabricated symbols
+    # ------------------------------------------------------------------
+
+    # Common framework/language identifiers that should be exempt from
+    # the grounding check (they're standard, not "fabricated" even if
+    # they don't appear in the indexed code).
+    _GROUNDING_EXEMPT = {
+        # C# / .NET keywords & common types
+        "string", "int", "bool", "void", "var", "async", "await",
+        "task", "list", "dictionary", "object", "null", "true", "false",
+        "public", "private", "protected", "internal", "static", "class",
+        "interface", "namespace", "using", "return", "new", "this",
+        "ienumerable", "icollection", "ilist", "idictionary", "ireadonly",
+        "exception", "argumentexception", "argumentnullexception",
+        "invalidoperationexception", "notsupportedexception",
+        "datetime", "datetimeoffset", "timespan", "guid", "uri",
+        "httpclient", "httpresponsemessage", "httprequestmessage",
+        "httpget", "httppost", "httpput", "httpdelete", "httppatch",
+        "fromBody", "frombody", "fromquery", "fromroute", "fromheader",
+        "ok", "badrequest", "notfound", "actionresult", "iactionresult",
+        "controllerbase", "controller", "route", "apicontroller",
+        "console", "writeline", "system", "microsoft", "azure",
+        "logger", "ilogger", "log", "info", "error", "warning", "debug",
+        # Generic terms
+        "request", "response", "result", "data", "service", "client",
+        "manager", "handler", "controller", "context", "options",
+        "configuration", "settings", "model", "view", "viewmodel",
+    }
+
+    # Match symbols inside fenced code blocks
+    _CODE_FENCE_RE = re.compile(r"```[\w]*\n(.*?)\n```", re.DOTALL)
+    # PascalCase identifiers (likely class names)
+    _PASCAL_RE = re.compile(r"\b([A-Z][a-zA-Z0-9]{3,})\b")
+    # Method calls: Foo.Bar( or .Bar(
+    _METHOD_RE = re.compile(r"\.([A-Z][a-zA-Z0-9]{2,})\s*\(")
+    # Route strings:  "/api/..." or '/api/...'
+    _ROUTE_RE = re.compile(r"""['"](/api/[\w/{}.\-]+)['"]""")
+    # File paths (.cs, .py, etc.) — heuristic
+    _PATH_RE = re.compile(r"\b([\w/\\.\-]+\.(?:cs|py|java|ts|js|go))\b")
+
+    def _check_grounding(
+        self,
+        response: str,
+        evidence_corpus: str,
+    ) -> List[str]:
+        """Find code symbols in the response that don't appear in the
+        retrieved evidence. Returns a list of unique ungrounded symbols.
+
+        Only checks symbols inside fenced code blocks (where hallucinated
+        APIs typically appear) — prose explanations are not checked since
+        the LLM may legitimately paraphrase concepts.
+        """
+        if not response or not evidence_corpus:
+            return []
+
+        evidence_lower = evidence_corpus.lower()
+
+        # Extract all fenced code blocks
+        code_blocks = self._CODE_FENCE_RE.findall(response)
+        if not code_blocks:
+            return []
+
+        symbols: set = set()
+        for block in code_blocks:
+            # PascalCase class/type names
+            for sym in self._PASCAL_RE.findall(block):
+                symbols.add(sym)
+            # Method calls
+            for sym in self._METHOD_RE.findall(block):
+                symbols.add(sym)
+            # Route strings
+            for sym in self._ROUTE_RE.findall(block):
+                symbols.add(sym)
+            # File paths
+            for sym in self._PATH_RE.findall(block):
+                symbols.add(sym)
+
+        ungrounded: List[str] = []
+        for sym in symbols:
+            sym_lower = sym.lower()
+            # Skip exempt framework identifiers
+            if sym_lower in self._GROUNDING_EXEMPT:
+                continue
+            # Skip very short symbols (false positive risk)
+            if len(sym) < 4:
+                continue
+            # Check if symbol appears anywhere in the evidence
+            if sym_lower not in evidence_lower:
+                ungrounded.append(sym)
+
+        # Sort for stable output, dedupe (already a set)
+        return sorted(set(ungrounded))

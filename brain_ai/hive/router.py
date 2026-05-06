@@ -14,6 +14,7 @@ and synthesizes.
 
 import logging
 import re
+from concurrent.futures import ThreadPoolExecutor, as_completed
 from typing import Any, Dict, List, Optional, Tuple
 
 from brain_ai.hive.gateway import Gateway
@@ -76,8 +77,8 @@ Synthesize these into ONE coherent, well-structured answer that:
 
 # ── Proactive cross-hive discovery ──────────────────────────────
 
-DISCOVERY_PROMPT = """You are an expert architect analyzing a technical response
-about a BCDR (Backup & Disaster Recovery) service.
+DISCOVERY_PROMPT = """You are an expert architect deciding which other services
+must be consulted to properly answer the user's question.
 
 The user asked: "{question}"
 
@@ -86,39 +87,37 @@ The primary service ({primary_hive} — {primary_display}) answered:
 {primary_response}
 ---
 
-Other available services you can consult:
+Other available services:
 {other_hives_summary}
 
-Your job: Identify which OTHER services are EXPLICITLY referenced or
-directly called by the primary response. Only consult another service
-if the primary response clearly mentions it by name or describes a
-cross-service API call, data flow, or dependency to that specific service.
+Consult another service ONLY when at least one of these is true:
+
+1. **Explicit dependency**: The primary response names another service,
+   calls its API, or describes a hand-off/data flow TO that service.
+2. **Essential ownership**: The other service OWNS a key part of the
+   workflow the user asked about (e.g. for "data mobility", a data-mover
+   service owns the actual transfer logic; for "cross-region restore",
+   a regional service owns the cross-region coordination).
+
+Do NOT consult a service when:
+- It only shares a loosely related concept (e.g. don't pull in a
+  "protection" service just because the question involves backup).
+- The primary response already adequately covers the concept.
+- The service's knowledge would be redundant with the primary answer.
 
 RULES:
-- Default to NONE. Only add cross-service lookups when ESSENTIAL.
-- Do NOT consult other services just because they exist in the same domain
-  (e.g. do NOT consult RSV for a DPP question or vice versa unless the
-  response explicitly references cross-vault interactions).
-- Do NOT re-ask the same question — make each sub-question SPECIFIC to
-  what that service uniquely knows (e.g. its internal implementation,
-  API contracts, data flow).
-- If the primary answer is fully self-contained, respond with NONE.
-- If in doubt, respond with NONE.
-- Maximum 3 cross-service lookups.
+- Make each sub-question SPECIFIC to what ONLY that service uniquely knows.
+- Maximum 2 cross-service lookups.
 
 Respond in EXACTLY this format (one per line, no other text):
 ASK:<hive_name>|<specific question for that service>
 
 Or if no cross-service context is needed:
 NONE
-
-Examples:
-ASK:dataplane|How does the data plane handle soft delete state for backup items? What APIs or internal methods manage the soft-deleted flag?
-ASK:monitoring|What alerts or monitoring events are triggered when a backup item is soft-deleted or when soft delete retention expires?
 """
 
-MULTI_SYNTHESIS_PROMPT = """You are creating a comprehensive, unified technical
-response by combining insights from multiple BCDR service teams.
+MULTI_SYNTHESIS_PROMPT = """You are creating a focused, unified technical
+response for the user's question.
 
 The user asked: "{question}"
 
@@ -128,15 +127,24 @@ The user asked: "{question}"
 ## Additional service inputs:
 {additional_sections}
 
-Create ONE unified, well-structured response that:
-1. Starts with a high-level summary of the end-to-end flow
-2. Walks through each service's role in sequence (like a real request flow)
-3. Highlights cross-service interactions (API calls, events, data contracts)
-4. Uses clear section headers for each service's contribution
-5. Includes a "Cross-Service Flow" section showing how data moves between services
-6. Uses proper markdown formatting with headers, bullet points, and code references
-7. Does NOT mention "hives", "agents", or internal routing — present this as
-   expert knowledge from across the BCDR platform
+Create ONE focused response that:
+1. Leads with the primary service's answer — this is the core content
+2. Weaves in additional service details ONLY where they directly clarify
+   or extend the primary answer (drop tangential info)
+3. Keeps the response concise — do NOT pad with loosely related details
+4. Uses proper markdown formatting with headers, bullet points, code refs
+5. Does NOT mention "hives", "agents", or internal routing
+
+CRITICAL ANTI-FABRICATION RULES:
+- **Do NOT invent code, class names, method names, file paths, REST
+  endpoints, route attributes, or API contracts.** Only include such
+  details if they appear verbatim in the provided service inputs.
+- If a service's input doesn't mention a specific API or class, do NOT
+  add one to make the response "look complete". Omit instead.
+- Quote file paths, class names, and code exactly as provided.
+
+IMPORTANT: If an additional service's input is not directly relevant to
+the user's specific question, OMIT it entirely rather than including it.
 """
 
 
@@ -185,6 +193,40 @@ class HiveRouter:
         )
 
     # ── Public interface ────────────────────────────────────────────
+
+    # Cheap relevance check — runs once per hive in parallel
+    _RELEVANCE_PROMPT = (
+        "You are the '{hive_name}' service ({display_name}).\n"
+        "Your scope: {description}\n"
+        "Your topics: {topics}\n\n"
+        "User's question: \"{question}\"\n\n"
+        "Is this question RELEVANT to your scope? Answer in EXACTLY this format:\n"
+        "DECISION: YES|NO\n"
+        "REASON: <one short sentence>\n\n"
+        "Answer YES only if your service owns part of the answer. Be strict — say NO\n"
+        "if the question is mostly about another service's domain."
+    )
+
+    ALL_HIVES_SYNTHESIS_PROMPT = (
+        "You are creating a unified technical response from multiple service experts.\n\n"
+        "User's question: \"{question}\"\n\n"
+        "## Service responses (each grounded in their own indexed code/docs):\n\n"
+        "{sections}\n\n"
+        "Create ONE focused response that:\n"
+        "1. Combines insights from the services that have substantive content\n"
+        "2. Drops/skips any service input that says \"no relevant code/docs found\"\n"
+        "   or appears to be filler — do NOT pad the answer with their content\n"
+        "3. Uses clear section headers when multiple services contribute\n"
+        "4. Uses proper markdown with code blocks, bullet points, and references\n"
+        "5. Does NOT mention \"hives\", \"agents\", or internal routing\n\n"
+        "CRITICAL ANTI-FABRICATION RULES:\n"
+        "- Do NOT invent code, class names, method names, file paths, REST\n"
+        "  endpoints, or API contracts. Only include details that appear\n"
+        "  verbatim in the provided service responses.\n"
+        "- If no service has concrete code/docs for part of the question, say\n"
+        "  so explicitly rather than fabricating.\n"
+        "- Quote file paths, class names, and code exactly as provided."
+    )
 
     def chat(self, message: str, deep: bool = True) -> Dict[str, Any]:
         """Process a user message through the hive system.
@@ -262,6 +304,288 @@ class HiveRouter:
         }
 
         return result
+
+    def chat_all_hives(self, message: str) -> Dict[str, Any]:
+        """Hybrid mode: cheap relevance pre-filter on ALL hives, then deep
+        pass on YES hives only, then synthesize.
+
+        Flow:
+          1. Parallel YES/NO relevance check on every hive (~9 small calls)
+          2. Deep chat() on hives that said YES (parallel)
+          3. Synthesize the multi-hive answers with strict anti-fab rules
+
+        Returns the same shape as chat() with extra keys:
+          - relevance_decisions: list of {hive, decision, reason}
+          - consulted_hives: list of hive names that contributed
+        """
+        if len(self.registry) == 0:
+            return {
+                "hive": "none",
+                "agent": "router",
+                "response": "No hives are available.",
+            }
+
+        # ── Step 1: parallel relevance pre-filter ────────────────────
+        log.info("chat_all_hives: running relevance check on %d hive(s)", len(self.registry))
+        relevance = self._relevance_filter(message)
+
+        yes_hives = [r for r in relevance if r["decision"] == "YES"]
+        log.info(
+            "Relevance filter: %d/%d hive(s) said YES: %s",
+            len(yes_hives), len(relevance),
+            [r["hive"] for r in yes_hives],
+        )
+
+        if not yes_hives:
+            # Fallback to normal routing if nobody claims relevance
+            log.info("No hives marked YES — falling back to normal chat()")
+            result = self.chat(message)
+            result["relevance_decisions"] = relevance
+            return result
+
+        # ── Step 2: parallel deep chat on YES hives ──────────────────
+        deep_results = self._fan_out_to_hives([r["hive"] for r in yes_hives], message)
+
+        if not deep_results:
+            return {
+                "hive": "none",
+                "agent": "router",
+                "response": "All relevant hives failed to respond.",
+                "relevance_decisions": relevance,
+            }
+
+        # ── Step 3: synthesize ──────────────────────────────────────
+        # If only one YES hive responded, just return its result directly
+        if len(deep_results) == 1:
+            hive_name, hive_result = deep_results[0]
+            hive_result["relevance_decisions"] = relevance
+            hive_result["consulted_hives"] = [hive_name]
+            hive_result["mode"] = "all_hives"
+            return hive_result
+
+        synthesized = self._synthesize_all_hives(message, deep_results)
+
+        primary_name, primary_result = deep_results[0]
+        consulted = [name for name, _ in deep_results]
+
+        # Update conversation history
+        self._conversation_history.append({"role": "user", "content": message})
+        self._conversation_history.append({
+            "role": "assistant",
+            "content": f"[All-hives mode: {consulted}] {synthesized[:500]}",
+        })
+        if len(self._conversation_history) > 20:
+            self._conversation_history = self._conversation_history[-20:]
+
+        return {
+            "hive": primary_name,
+            "agent": primary_result.get("agent", "multi"),
+            "response": synthesized,
+            "relevance_decisions": relevance,
+            "consulted_hives": consulted,
+            "consulted_details": [
+                {"hive": name, "question": message}
+                for name, _ in deep_results
+            ],
+            "mode": "all_hives",
+        }
+
+    def _relevance_filter(self, message: str) -> List[Dict[str, str]]:
+        """Run a cheap parallel YES/NO relevance check on every hive."""
+        hives = list(self.registry)
+        results: List[Dict[str, str]] = []
+
+        def check_one(hive: Hive) -> Dict[str, str]:
+            prompt = self._RELEVANCE_PROMPT.format(
+                hive_name=hive.name,
+                display_name=hive.display_name,
+                description=hive.description[:300],
+                topics=", ".join(hive.topics[:15]),
+                question=message,
+            )
+            try:
+                text = self.llm.generate(
+                    message=prompt,
+                    system="You are a strict relevance classifier. Answer YES only if your service owns part of the answer.",
+                    history=[],
+                ).strip()
+                # Parse DECISION + REASON
+                decision = "NO"
+                reason = ""
+                for line in text.splitlines():
+                    line = line.strip()
+                    if line.upper().startswith("DECISION:"):
+                        val = line.split(":", 1)[1].strip().upper()
+                        if val.startswith("YES"):
+                            decision = "YES"
+                        elif val.startswith("NO"):
+                            decision = "NO"
+                    elif line.upper().startswith("REASON:"):
+                        reason = line.split(":", 1)[1].strip()
+                return {"hive": hive.name, "decision": decision, "reason": reason}
+            except Exception as e:
+                log.warning("Relevance check failed for %s: %s", hive.name, e)
+                return {"hive": hive.name, "decision": "NO", "reason": f"check failed: {e}"}
+
+        # Run in parallel — bounded thread pool
+        max_workers = min(len(hives), 8)
+        with ThreadPoolExecutor(max_workers=max_workers) as ex:
+            futures = {ex.submit(check_one, h): h.name for h in hives}
+            for fut in as_completed(futures):
+                results.append(fut.result())
+
+        # Stable order by hive name
+        results.sort(key=lambda r: r["hive"])
+        for r in results:
+            log.info("  [%s] %s — %s", r["hive"], r["decision"], r["reason"][:80])
+        return results
+
+    def _fan_out_to_hives(
+        self, hive_names: List[str], message: str
+    ) -> List[Tuple[str, Dict[str, Any]]]:
+        """Run deep chat() on each hive in parallel. Returns list of
+        (hive_name, result_dict) for hives that produced a response."""
+        results: List[Tuple[str, Dict[str, Any]]] = []
+
+        def run_one(name: str) -> Optional[Tuple[str, Dict[str, Any]]]:
+            hive = self.registry.get(name)
+            if hive is None:
+                return None
+            try:
+                result = hive.chat(message)
+                # Reset so this isolated turn doesn't pollute hive history
+                hive.reset()
+                if result.get("response"):
+                    return (name, result)
+            except Exception as e:
+                log.error("Deep chat failed for %s: %s", name, e)
+            return None
+
+        max_workers = min(len(hive_names), 6)
+        with ThreadPoolExecutor(max_workers=max_workers) as ex:
+            futures = {ex.submit(run_one, n): n for n in hive_names}
+            for fut in as_completed(futures):
+                r = fut.result()
+                if r is not None:
+                    results.append(r)
+
+        # Order: keep stable by original hive order in registry
+        order = {h.name: i for i, h in enumerate(self.registry)}
+        results.sort(key=lambda x: order.get(x[0], 999))
+        return results
+
+    def _synthesize_all_hives(
+        self,
+        question: str,
+        deep_results: List[Tuple[str, Dict[str, Any]]],
+    ) -> str:
+        """Synthesize multiple hive responses into a single answer."""
+        sections = []
+        for name, result in deep_results:
+            hive = self.registry.get(name)
+            display = hive.display_name if hive else name
+            response = result.get("response", "")[:4000]
+            sections.append(f"### {display} ({name})\n{response}")
+
+        prompt = self.ALL_HIVES_SYNTHESIS_PROMPT.format(
+            question=question,
+            sections="\n\n".join(sections),
+        )
+
+        try:
+            return self.llm.generate(
+                message=prompt,
+                system=(
+                    "Create a focused, evidence-grounded response. "
+                    "Drop sections with no real content. Never fabricate code."
+                ),
+                history=[],
+            )
+        except Exception as e:
+            log.error("All-hives synthesis failed: %s — concatenating responses.", e)
+            return "\n\n".join(s for _, s in [(n, r.get("response", "")) for n, r in deep_results] if s)
+
+    # ── Clarifier ───────────────────────────────────────────────────
+
+    _CLARIFIER_PROMPT = (
+        "You are a clarifier. Decide whether the user's question is specific\n"
+        "enough to give a focused, accurate answer, or whether you should ask\n"
+        "1-2 short clarifying questions first.\n\n"
+        "Available service domains: {hives_summary}\n\n"
+        "User's question: \"{question}\"\n\n"
+        "Recent conversation context:\n{history}\n\n"
+        "Decide:\n"
+        "- If the question is specific enough (names a concrete feature, error,\n"
+        "  TaskId, file, or follows up on prior context), respond: CLEAR\n"
+        "- If it's broad/ambiguous and could mean multiple things across the\n"
+        "  available domains, respond with 1-2 SHORT clarifying questions.\n\n"
+        "Format:\n"
+        "CLEAR\n"
+        "  -- OR --\n"
+        "ASK:\n"
+        "1. <first clarifying question>\n"
+        "2. <optional second question>\n\n"
+        "Keep clarifying questions short (one line each) and concrete. Offer\n"
+        "specific options when possible (e.g. \"Do you mean A, B, or C?\")."
+    )
+
+    def clarify_question(self, message: str) -> Dict[str, Any]:
+        """Decide if the user's question needs clarification.
+
+        Returns a dict:
+          {"status": "clear"}  → proceed
+          {"status": "ask", "questions": ["...", "..."]}  → ask user, then merge
+        """
+        # Build short hive summary for context
+        hive_lines = []
+        for h in list(self.registry)[:12]:
+            hive_lines.append(f"- {h.name}: {h.display_name}")
+        hives_summary = "\n".join(hive_lines)
+
+        # Recent history (last 4 messages)
+        hist_lines = []
+        for turn in self._conversation_history[-4:]:
+            role = turn.get("role", "?")
+            content = turn.get("content", "")[:200]
+            hist_lines.append(f"{role}: {content}")
+        history = "\n".join(hist_lines) if hist_lines else "(none)"
+
+        prompt = self._CLARIFIER_PROMPT.format(
+            question=message,
+            hives_summary=hives_summary,
+            history=history,
+        )
+
+        try:
+            text = self.llm.generate(
+                message=prompt,
+                system="Be a strict clarifier. Default to CLEAR unless genuinely ambiguous.",
+                history=[],
+            ).strip()
+        except Exception as e:
+            log.warning("Clarifier failed: %s — proceeding without clarification.", e)
+            return {"status": "clear"}
+
+        if text.upper().startswith("CLEAR"):
+            return {"status": "clear"}
+
+        # Parse "ASK:\n1. ...\n2. ..."
+        questions: List[str] = []
+        for line in text.splitlines():
+            line = line.strip()
+            if not line:
+                continue
+            # Match "1. ..." or "2. ..." or "- ..."
+            m = re.match(r"^(?:\d+\.|-)\s*(.+)$", line)
+            if m:
+                q = m.group(1).strip()
+                if q and not q.upper().startswith("ASK"):
+                    questions.append(q)
+
+        if not questions:
+            return {"status": "clear"}
+
+        return {"status": "ask", "questions": questions[:2]}
 
     def reset_conversation(self):
         """Clear all conversation state across all hives."""
@@ -461,7 +785,7 @@ class HiveRouter:
         try:
             text = self.llm.generate(
                 message=prompt,
-                system="Analyze cross-service dependencies. Be precise and selective.",
+                system="Only identify cross-service lookups when the primary answer is genuinely incomplete. Default to NONE.",
                 history=[],
             ).strip()
 
@@ -479,7 +803,7 @@ class HiveRouter:
                         if hive_name in self.registry and hive_name != primary_hive.name:
                             sub_questions.append((hive_name, sub_q))
 
-            return sub_questions[:3]  # Cap at 3
+            return sub_questions[:2]  # Cap at 2
 
         except Exception as e:
             log.error("Cross-hive discovery failed: %s", e)

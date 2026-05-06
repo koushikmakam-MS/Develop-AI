@@ -15,8 +15,12 @@ env/
 
 # BCDR DeveloperAI runtime data
 .chromadb/
+chroma_db/
 .repo_cache/
 docs/agentKT/
+saved_responses/
+discovery_store.db
+discovery_store.db-journal
 *.log
 BCDR_devai.log
 BCDR_devai_bot.log

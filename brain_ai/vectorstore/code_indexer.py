@@ -348,15 +348,31 @@ class CodeIndexer:
         Semantic search over indexed code.
         Returns list of {text, source, score, symbols, chunk_label} dicts.
         """
-        if self.collection.count() == 0:
-            log.warning("Code collection is empty. Run code indexing first.")
+        try:
+            if self.collection.count() == 0:
+                log.warning("Code collection is empty. Run code indexing first.")
+                return []
+        except Exception as e:
+            log.warning(
+                "Code collection '%s' is unreadable (%s) — treating as empty. "
+                "Run the code indexer to populate it.",
+                self.collection.name, e,
+            )
             return []
 
-        results = self.collection.query(
-            query_texts=[query],
-            n_results=top_k,
-            include=["documents", "metadatas", "distances"],
-        )
+        try:
+            results = self.collection.query(
+                query_texts=[query],
+                n_results=top_k,
+                include=["documents", "metadatas", "distances"],
+            )
+        except Exception as e:
+            log.warning(
+                "Code collection '%s' query failed (%s) — likely missing/corrupt index. "
+                "Returning no hits.",
+                self.collection.name, e,
+            )
+            return []
 
         hits = []
         for doc, meta, dist in zip(

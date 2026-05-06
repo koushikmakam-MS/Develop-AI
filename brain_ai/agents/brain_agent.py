@@ -264,9 +264,14 @@ class BrainAgent:
             f"Create ONE comprehensive response that:\n"
             f"1. Leads with the high-level architecture/concepts from the docs\n"
             f"2. Adds concrete implementation details from the code (class names, methods, data flows)\n"
-            f"3. Highlights anything the code reveals that the docs don't cover\n"
-            f"4. Includes a Mermaid diagram if the answer involves a flow or architecture\n"
-            f"5. References both doc sources and code file paths\n\n"
+            f"3. Highlights API details ONLY if they appear in the source analysis: "
+            f"REST endpoints, HTTP methods, controller actions, request/response "
+            f"contracts, and route patterns. **Do NOT invent endpoints, routes, "
+            f"class names, or method signatures.** If a detail isn't in the "
+            f"provided analyses, omit it rather than guessing.\n"
+            f"4. Highlights anything the code reveals that the docs don't cover\n"
+            f"5. Includes a Mermaid diagram if the answer involves a flow or architecture\n"
+            f"6. References both doc sources and code file paths exactly as they appear\n\n"
             f"Do NOT mention that two analyses were combined — present it as one unified answer."
         )
         try:

@@ -127,12 +127,28 @@ hives:
   enabled: true
 
   # Default hive — used when the router can't determine domain
-  default_hive: "dpp"
+  default_hive: "rsv"
 
   # Primary hives — the ONLY hives that can be entry points.
   # All queries start from one of these; other hives are reached
   # via cross-hive delegation or proactive discovery.
-  primary_hives: ["dpp", "rsv"]
+  #
+  # Set this to control which hives users can directly query:
+  #   ["rsv"]          → RSV-only deployment
+  #   ["dpp"]          → DPP-only deployment
+  #   ["dpp", "rsv"]   → both available; gateway picks based on the question
+  primary_hives: ["rsv"]
+
+  # Excluded hives — completely removed from the system. Not loaded,
+  # not consultable, not in boundary maps, not reachable via discovery.
+  # Use this for tenant isolation: when only RSV should be active,
+  # exclude DPP (and vice versa) so cross-hive lookups never reach it.
+  #
+  # Examples:
+  #   excluded_hives: ["dpp"]   → RSV-only tenant (DPP fully disabled)
+  #   excluded_hives: ["rsv"]   → DPP-only tenant (RSV fully disabled)
+  #   excluded_hives: []        → multi-tenant (both available)
+  excluded_hives: ["dpp"]
 
   definitions:
     dpp:
@@ -240,6 +256,9 @@ hives:
           - "protection intent"
           - "workload items"
           - "backup providers"
+          - "data move"
+          - "data mobility"
+          - "resource move"
         kusto_tables:
           - "OperationStatsLocalAllClusters"
           - "TraceLogMessageAllClusters"

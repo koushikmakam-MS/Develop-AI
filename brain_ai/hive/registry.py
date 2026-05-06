@@ -23,7 +23,34 @@ class HiveRegistry:
         definitions = hives_cfg.get("definitions", {})
         self.default_hive_name: str = hives_cfg.get("default_hive", "bms")
 
+        # Excluded hives — completely removed from the system: not loaded,
+        # not in the boundary map, not consultable, not an entry point.
+        # Useful for tenant isolation (e.g., excluded_hives: ["dpp"] in
+        # an RSV-only deployment so DPP is never reached).
+        excluded = set(hives_cfg.get("excluded_hives", []) or [])
+        if excluded:
+            log.info("Excluded hives (will not be loaded): %s", sorted(excluded))
+
+        # Validate primary_hives doesn't reference an excluded hive
+        primary_hives = hives_cfg.get("primary_hives", []) or []
+        bad_primaries = [p for p in primary_hives if p in excluded]
+        if bad_primaries:
+            raise ValueError(
+                f"Config error: primary_hives contains excluded hive(s) {bad_primaries}. "
+                f"Either remove from primary_hives or from excluded_hives."
+            )
+
+        # Validate default_hive isn't excluded
+        if self.default_hive_name in excluded:
+            raise ValueError(
+                f"Config error: default_hive '{self.default_hive_name}' is in excluded_hives. "
+                f"Pick a different default_hive."
+            )
+
         for name, hive_cfg in definitions.items():
+            if name in excluded:
+                log.info("Skipping excluded hive: %s", name)
+                continue
             try:
                 hive = Hive(name, hive_cfg, global_cfg)
                 self._hives[name] = hive

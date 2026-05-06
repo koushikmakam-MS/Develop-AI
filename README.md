@@ -9,18 +9,61 @@ The system uses a **Hive Architecture** — a network of domain-specialized agen
 ### Key Features
 
 - **Gateway Agent** — two-stage routing: fast topic keyword match (zero LLM cost) → LLM tiebreaker only when ambiguous
-- **Anchor Terms** — high-weight domain-specific terms (e.g., "backup vault" → DPP, "recovery services vault" → RSV) prevent routing confusion between similar services
+- **Anchor Terms** — high-weight domain-specific terms (e.g., "backup vault", "recovery services vault", "data mobility") prevent routing confusion between similar services
+- **Primary Entry Points** — only `primary_hives` (configurable) can be entry points; other hives are reached via boundary detection or proactive discovery
 - **Discovery Store** — SQLite-backed auto-topic extraction from indexed content, freshness tracking, staleness warnings, and **namespace-to-hive mapping** for boundary detection
 - **Doc + Code Synthesis** — knowledge agent answers are always enriched with source code context from the coder agent, producing unified responses with both architecture concepts and concrete implementation details
-- **Auto Boundary Detection** — code namespaces, API routes, and proxy classes are extracted during indexing and stored in the discovery store; the coder agent uses regex + LLM fallback to detect cross-service references automatically
-- **Cross-Service Code Resolution** — when a boundary crossing is detected (e.g., DPP code references a Common library), the system calls the target hive's coder to get the full context
+- **Auto Boundary Detection** — code namespaces, API routes, and proxy classes are extracted during indexing; coder agents use regex + LLM detection to find cross-service references, with a noise filter that ignores generic framework namespaces (`System.*`, `Microsoft.Extensions.*`, etc.)
+- **LLM Relevance Gate** — detected boundaries are filtered by an LLM that decides which are *critical* to the user's question, dropping infrastructure noise before triggering cross-hive lookups
+- **Cross-Service Code Resolution** — when a critical boundary is detected (e.g., RSV code references the data-mover service), the system calls the target hive's coder to get the full context
+- **🛡️ Grounding Check** — every coder response is post-validated: code symbols (classes, methods, routes, file paths) inside fenced blocks that don't appear in the retrieved evidence are flagged as potentially fabricated, with a clear warning appended to the response
+- **🚫 Anti-Fabrication Prompts** — system prompts at every layer (coder, doc+code synthesis, multi-hive synthesis) explicitly forbid inventing code, endpoints, or APIs; the LLM must quote retrieved content exactly or say "not found"
 - **Config-driven hives** — each hive defined in `config.yaml` → `hives.definitions`
 - **Proactive cross-hive discovery** — the router analyzes primary responses for cross-service references and automatically fans out targeted sub-questions to other hives
 - **Cross-hive callback (`[ASK:]`)** — agents can query other hives mid-response and get answers back inline, producing ONE cohesive response instead of post-hoc synthesis
 - **Explicit delegation (`[DELEGATE:]`)** — agents can emit `[DELEGATE:<hive>]` signals for full hand-off when the question is entirely another domain's territory
-- **Multi-hive synthesis** — responses from multiple services are unified into a single end-to-end flow
+- **Multi-hive synthesis** — responses from multiple services are unified into a single end-to-end flow with strict anti-fabrication rules
+- **Graceful degradation** — if any hive's vector index is missing or corrupt, the system logs a warning and returns no hits for that hive instead of crashing
 - **`/save` command** — export any response as rich Markdown with Mermaid routing diagrams and metadata
 - **Backward compatible** — set `hives.enabled: false` to use the classic single-BrainAgent mode
+
+### Query Modes
+
+Prefix any question with these flags to control how it's processed (combinable in any order):
+
+| Mode | Flag | What it does | When to use |
+|------|------|--------------|-------------|
+| **Default** | _(none)_ | Routes to the primary hive → maybe consults 1–2 related hives via discovery | Specific questions, follow-ups, fast answers |
+| **Clarify** | `-c` | LLM checks if the question is ambiguous; if so, asks 1–2 clarifying questions before routing | Broad/vague questions where you want the AI to ask for specifics |
+| **All-hives** | `-a` | Cheap parallel YES/NO relevance check on every hive → deep query on YES hives in parallel → evidence-grounded synthesis | Cross-cutting questions that span multiple services |
+| **Both** | `-c -a` | Clarify first → then all-hives mode | Big exploratory dives |
+
+Examples:
+```
+explain me data mobility                    # default: fast, focused
+-c explain me data mobility                 # clarify first, then route
+-a explain me data mobility                 # ask all relevant hives in parallel
+-c -a explain me data mobility              # clarify, then all-hives
+```
+
+### Tenant Isolation
+
+Use `excluded_hives` in `config.yaml` to completely remove a hive from the system:
+
+```yaml
+hives:
+  default_hive: "rsv"
+  primary_hives: ["rsv"]
+  excluded_hives: ["dpp"]   # DPP fully disabled — not loaded, not reachable
+```
+
+| Tenant | `default_hive` | `primary_hives` | `excluded_hives` |
+|--------|----------------|-----------------|------------------|
+| RSV-only | `"rsv"` | `["rsv"]` | `["dpp"]` |
+| DPP-only | `"dpp"` | `["dpp"]` | `["rsv"]` |
+| Both available | `"rsv"` (or `dpp`) | `["dpp", "rsv"]` | `[]` |
+
+When a hive is excluded, it is **not loaded** into the registry, **not consultable** via discovery / `[ASK:]` / `[DELEGATE:]`, and **not in the boundary map** — zero calls will ever reach it. Config validation fails fast at startup if `primary_hives` or `default_hive` reference an excluded hive.
 
 ### Concept
 
@@ -706,10 +749,23 @@ python scripts/run_kusto_server.py --port 8701  # custom port
 | `/help`    | Show help message                        |
 | `/clear`   | Clear conversation history               |
 | `/agents`  | List available agents                    |
+| `/hives`   | List available hives & their scopes      |
+| `/status`  | Show hive index status, staleness & topic counts |
 | `/kusto`   | Check Kusto MCP server status            |
 | `/code`    | Check code index status                  |
 | `/pending` | Show staged doc corrections (if any)     |
+| `/save`    | Save last response as rich Markdown (with Mermaid routing diagram) |
+| `/logs`    | Toggle verbose logging on/off            |
 | `/quit`    | Exit the chat                            |
+
+### Query flags (prefix any question)
+
+| Flag       | Description                              |
+|------------|------------------------------------------|
+| _(none)_   | Default routing — fast, focused, primary hive + selective consult |
+| `-c`       | Clarify first — LLM asks 1–2 clarifying questions if the question is ambiguous |
+| `-a`       | All-hives — parallel relevance check across all hives, then deep query on relevant ones |
+| `-c -a`    | Clarify, then all-hives                  |
 
 ## Daily Sync (Automation)
 

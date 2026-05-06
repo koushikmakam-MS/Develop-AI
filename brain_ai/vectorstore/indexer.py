@@ -202,15 +202,31 @@ class DocIndexer:
         Semantic search over indexed docs.
         Returns list of {text, source, score} dicts.
         """
-        if self.collection.count() == 0:
-            log.debug("Doc collection '%s' is empty — no docs indexed.", self.collection.name)
+        try:
+            if self.collection.count() == 0:
+                log.debug("Doc collection '%s' is empty — no docs indexed.", self.collection.name)
+                return []
+        except Exception as e:
+            log.warning(
+                "Doc collection '%s' is unreadable (%s) — treating as empty. "
+                "Run the indexer to populate it.",
+                self.collection.name, e,
+            )
             return []
 
-        results = self.collection.query(
-            query_texts=[query],
-            n_results=top_k,
-            include=["documents", "metadatas", "distances"],
-        )
+        try:
+            results = self.collection.query(
+                query_texts=[query],
+                n_results=top_k,
+                include=["documents", "metadatas", "distances"],
+            )
+        except Exception as e:
+            log.warning(
+                "Doc collection '%s' query failed (%s) — likely missing/corrupt index. "
+                "Returning no hits.",
+                self.collection.name, e,
+            )
+            return []
 
         hits = []
         for doc, meta, dist in zip(
