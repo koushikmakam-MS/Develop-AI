@@ -157,7 +157,6 @@ class HiveRouter:
             llm=self.llm,
             default_hive=self.registry.default_hive_name,
             primary_hives=hives_cfg.get("primary_hives"),
-            taskid_suffix_map=hives_cfg.get("taskid_suffix_map"),
         )
 
         # Conversation history for routing context

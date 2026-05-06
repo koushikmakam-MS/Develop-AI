@@ -55,27 +55,17 @@ class Gateway:
     Other hives are reached via cross-hive delegation or proactive discovery.
     """
 
-    # TaskId suffix regex — captures the part after the GUID
-    _TASKID_SUFFIX_RE = re.compile(
-        r'[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-'
-        r'[0-9a-fA-F]{4}-[0-9a-fA-F]{12}-([A-Za-z][A-Za-z0-9_]*)'
-    )
-
     def __init__(
         self,
         registry: HiveRegistry,
         llm: LLMClient,
         default_hive: str,
         primary_hives: Optional[List[str]] = None,
-        taskid_suffix_map: Optional[Dict[str, str]] = None,
     ):
         self.registry = registry
         self.llm = llm
         self.default_hive = default_hive
         self.primary_hives: List[str] = primary_hives or [default_hive]
-        self._taskid_suffix_map: Dict[str, str] = {
-            k.lower(): v for k, v in (taskid_suffix_map or {}).items()
-        }
 
         # Pre-build keyword index: word → [(hive_name, topic)]
         self._keyword_index: Dict[str, List[Tuple[str, str]]] = {}
@@ -157,19 +147,10 @@ class Gateway:
 
         Priority:
         1. Follow-up to a primary hive → stay there.
-        2. TaskId suffix (e.g. -Ibz → dpp, -AzureIaasVM → rsv).
-        3. Default to first primary hive.
+        2. Default to first primary hive (DPP).
         """
         if last_hive and last_hive in self.primary_hives:
             return last_hive, "primary_followup"
-
-        # TaskId suffix detection
-        for m in self._TASKID_SUFFIX_RE.finditer(message):
-            suffix = m.group(1).lower()
-            if suffix in self._taskid_suffix_map:
-                hive = self._taskid_suffix_map[suffix]
-                log.info("Gateway: TaskId suffix '%s' → %s", m.group(1), hive)
-                return hive, "taskid_suffix"
 
         return self.primary_hives[0], "primary_default"
 

@@ -134,20 +134,6 @@ hives:
   # via cross-hive delegation or proactive discovery.
   primary_hives: ["dpp", "rsv"]
 
-  # TaskId suffix → hive mapping (for automatic routing of debug queries)
-  taskid_suffix_map:
-    Ibz: "dpp"
-    AzureWorkload: "dpp"
-    AzureDisk: "dpp"
-    AzureBlob: "dpp"
-    AzureKubernetesService: "dpp"
-    AzureDatabaseForPostgreSQL: "dpp"
-    AzureIaasVM: "rsv"
-    AzureFileShare: "rsv"
-    MABS: "rsv"
-    DPM: "rsv"
-    MicrosoftAzureRecoveryServices: "rsv"
-
   definitions:
     dpp:
       display_name: "Data Protection Platform (DPP)"
