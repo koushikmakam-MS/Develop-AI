@@ -498,7 +498,7 @@ class TestHiveRouter:
     @patch("brain_ai.agents.brain_agent.CoderAgent")
     @patch("brain_ai.agents.brain_agent.KnowledgeUpdaterAgent")
     def test_multi_hive_routes_via_llm(self, mock_updater, *_mocks):
-        """With multiple hives, router uses LLM to select the hive."""
+        """With multiple hives, LLM picks non-primary → gateway overrides to primary."""
         from brain_ai.hive.router import HiveRouter
 
         # Ensure mocked updater instances have a real pending_count
@@ -507,16 +507,16 @@ class TestHiveRouter:
 
         router = HiveRouter(_global_cfg())
 
-        # Mock the LLM to return "HIVE:common"
+        # Mock the LLM to return "HIVE:common" — but gateway enforces primary
         router.llm.generate = MagicMock(return_value="HIVE:common")
 
-        # Mock the common hive's brain.chat
-        router.registry.get("common").brain.chat = MagicMock(
-            return_value={"agent": "knowledge", "response": "SDK info here"}
+        # The gateway will override to the default primary hive (bms)
+        router.registry.get("bms").brain.chat = MagicMock(
+            return_value={"agent": "knowledge", "response": "BMS handled it"}
         )
 
         result = router.chat("What SDK utilities are available?")
-        assert result["hive"] == "common"
+        assert result["hive"] == "bms"  # primary override
         assert result["agent"] == "knowledge"
 
     @patch("brain_ai.agents.brain_agent.KnowledgeAgent")

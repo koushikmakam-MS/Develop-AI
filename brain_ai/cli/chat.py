@@ -682,3 +682,7 @@ def run_chat(config_path: Optional[str] = None):
             continue
         except EOFError:
             break
+
+
+if __name__ == "__main__":
+    run_chat()

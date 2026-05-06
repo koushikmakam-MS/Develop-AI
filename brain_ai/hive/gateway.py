@@ -49,17 +49,33 @@ HIVE:<domain_name>
 
 
 class Gateway:
-    """Two-stage hive routing: fast topic match → LLM tiebreaker."""
+    """Two-stage hive routing: fast topic match → LLM tiebreaker.
+
+    Entry points are restricted to primary hives (e.g. DPP, RSV).
+    Other hives are reached via cross-hive delegation or proactive discovery.
+    """
+
+    # TaskId suffix regex — captures the part after the GUID
+    _TASKID_SUFFIX_RE = re.compile(
+        r'[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-'
+        r'[0-9a-fA-F]{4}-[0-9a-fA-F]{12}-([A-Za-z][A-Za-z0-9_]*)'
+    )
 
     def __init__(
         self,
         registry: HiveRegistry,
         llm: LLMClient,
         default_hive: str,
+        primary_hives: Optional[List[str]] = None,
+        taskid_suffix_map: Optional[Dict[str, str]] = None,
     ):
         self.registry = registry
         self.llm = llm
         self.default_hive = default_hive
+        self.primary_hives: List[str] = primary_hives or [default_hive]
+        self._taskid_suffix_map: Dict[str, str] = {
+            k.lower(): v for k, v in (taskid_suffix_map or {}).items()
+        }
 
         # Pre-build keyword index: word → [(hive_name, topic)]
         self._keyword_index: Dict[str, List[Tuple[str, str]]] = {}
@@ -104,14 +120,14 @@ class Gateway:
             [(name, f"{score:.3f}") for name, score in ranked[:5]],
         )
 
-        # If all scores are 0, use default (or last hive for follow-ups)
+        # If all scores are 0, use suffix detection / primary fallback
         if not ranked or ranked[0][1] == 0:
-            choice = last_hive or self.default_hive
-            log.info("Gateway: no topic matches → %s (default/follow-up)", choice)
+            choice, method = self._zero_score_fallback(message, last_hive)
+            log.info("Gateway: no topic matches → %s (%s)", choice, method)
             return {
                 "hive": choice,
                 "confidence": 0.0,
-                "method": "default",
+                "method": method,
                 "scores": scores,
                 "matched_topics": matched,
             }
@@ -119,11 +135,69 @@ class Gateway:
         top_name, top_score = ranked[0]
         second_score = ranked[1][1] if len(ranked) > 1 else 0
 
-        # Clear winner? Route directly.
+        # Clear winner? Route directly (but enforce primary-only).
         if second_score == 0 or (top_score / max(second_score, 0.001)) >= CONFIDENCE_THRESHOLD:
+            routed = self._enforce_primary(top_name, ranked, scores, matched)
             log.info(
-                "Gateway: clear winner → %s (score=%.3f, 2nd=%.3f)",
-                top_name, top_score, second_score,
+                "Gateway: clear winner → %s (score=%.3f, 2nd=%.3f, routed=%s)",
+                top_name, top_score, second_score, routed["hive"],
+            )
+            return routed
+
+        # Stage 2: LLM tiebreaker with top candidates only
+        candidates = ranked[:MAX_LLM_CANDIDATES]
+        return self._llm_tiebreaker(
+            message, candidates, matched, scores, last_hive
+        )
+
+    def _zero_score_fallback(
+        self, message: str, last_hive: Optional[str]
+    ) -> Tuple[str, str]:
+        """Determine the best primary hive when scoring produced no matches.
+
+        Priority:
+        1. Follow-up to a primary hive → stay there.
+        2. TaskId suffix (e.g. -Ibz → dpp, -AzureIaasVM → rsv).
+        3. Default to first primary hive.
+        """
+        if last_hive and last_hive in self.primary_hives:
+            return last_hive, "primary_followup"
+
+        # TaskId suffix detection
+        for m in self._TASKID_SUFFIX_RE.finditer(message):
+            suffix = m.group(1).lower()
+            if suffix in self._taskid_suffix_map:
+                hive = self._taskid_suffix_map[suffix]
+                log.info("Gateway: TaskId suffix '%s' → %s", m.group(1), hive)
+                return hive, "taskid_suffix"
+
+        return self.primary_hives[0], "primary_default"
+
+    def _best_primary(
+        self, ranked: List[Tuple[str, float]]
+    ) -> Optional[Tuple[str, float]]:
+        """Find the highest-scoring primary hive from the ranked list."""
+        for name, score in ranked:
+            if name in self.primary_hives and score > 0:
+                return name, score
+        return None
+
+    def _enforce_primary(
+        self,
+        top_name: str,
+        ranked: List[Tuple[str, float]],
+        scores: Dict[str, float],
+        matched: Dict[str, List[str]],
+    ) -> Dict[str, Any]:
+        """Ensure the routed hive is a primary hive.
+
+        If the top scorer is not primary, pick the best primary hive instead.
+        If no primary hive scored, default to the first primary.
+        """
+        if top_name in self.primary_hives:
+            top_score = scores[top_name]
+            second_score = max(
+                (s for n, s in ranked if n != top_name), default=0
             )
             return {
                 "hive": top_name,
@@ -133,11 +207,34 @@ class Gateway:
                 "matched_topics": matched,
             }
 
-        # Stage 2: LLM tiebreaker with top candidates only
-        candidates = ranked[:MAX_LLM_CANDIDATES]
-        return self._llm_tiebreaker(
-            message, candidates, matched, scores, last_hive
+        # Top scorer is non-primary → find best primary instead
+        best = self._best_primary(ranked)
+        if best:
+            name, score = best
+            log.info(
+                "Gateway: top scorer '%s' is non-primary, using primary '%s' (score=%.3f)",
+                top_name, name, score,
+            )
+            return {
+                "hive": name,
+                "confidence": min(score / max(score + scores.get(top_name, 0), 1), 1.0),
+                "method": "primary_override",
+                "scores": scores,
+                "matched_topics": matched,
+            }
+
+        # No primary hive scored at all → default
+        log.info(
+            "Gateway: no primary hive scored, defaulting to '%s'",
+            self.primary_hives[0],
         )
+        return {
+            "hive": self.primary_hives[0],
+            "confidence": 0.0,
+            "method": "primary_default",
+            "scores": scores,
+            "matched_topics": matched,
+        }
 
     def _score_all(
         self, message: str
@@ -231,7 +328,18 @@ class Gateway:
             m = re.search(r'\bHIVE\s*:\s*(\w+)', text, re.IGNORECASE)
             if m:
                 hive_name = m.group(1).strip().lower()
+                # Enforce primary: if LLM picks non-primary, override
                 if hive_name in self.registry:
+                    if hive_name not in self.primary_hives:
+                        best = self._best_primary(
+                            sorted(all_scores.items(), key=lambda x: -x[1])
+                        )
+                        override = best[0] if best else self.primary_hives[0]
+                        log.info(
+                            "Gateway LLM picked non-primary '%s', overriding to '%s'",
+                            hive_name, override,
+                        )
+                        hive_name = override
                     log.info("Gateway LLM tiebreaker → %s", hive_name)
                     return {
                         "hive": hive_name,
@@ -247,12 +355,15 @@ class Gateway:
         except Exception as e:
             log.error("LLM tiebreaker failed: %s", e)
 
-        # Fallback to top scorer from stage 1
-        top = candidates[0][0]
+        # Fallback to best primary from stage 1
+        best = self._best_primary(
+            sorted(all_scores.items(), key=lambda x: -x[1])
+        )
+        top = best[0] if best else self.primary_hives[0]
         return {
             "hive": top,
             "confidence": 0.5,
-            "method": "topic_match_fallback",
+            "method": "primary_fallback",
             "scores": all_scores,
             "matched_topics": matched,
         }
